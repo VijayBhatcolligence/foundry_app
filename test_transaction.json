@@ -1,0 +1,20 @@
+{
+  "transactionId": "TEST-001",
+  "poNumber": "PO-20260318-001",
+  "vendor": "Test Vendor Corp",
+  "lineItems": [
+    {
+      "sku": "SKU001",
+      "description": "Test Widget A",
+      "quantity": "10",
+      "location": "A1-B2"
+    },
+    {
+      "sku": "SKU002",
+      "description": "Test Widget B",
+      "quantity": "5",
+      "location": "C3-D4"
+    }
+  ],
+  "createdAt": 1773818000000
+}

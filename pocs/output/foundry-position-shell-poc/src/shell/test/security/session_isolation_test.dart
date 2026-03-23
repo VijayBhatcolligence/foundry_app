@@ -3,6 +3,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:foundry_shell/auth/mock_auth_service.dart';
 import 'package:foundry_shell/position/position_resolver.dart';
 import 'package:foundry_shell/session/session_broker.dart';
+import 'package:flutter/services.dart';
 
 /// Tests session isolation and security properties
 ///
@@ -18,7 +19,19 @@ void main() {
     late SessionBroker sessionBroker;
 
     setUp(() {
+      TestWidgetsFlutterBinding.ensureInitialized();
+
       FlutterSecureStorage.setMockInitialValues({});
+
+      // Mock any platform channels that might be accessed
+      const MethodChannel('plugins.flutter.io/path_provider')
+          .setMockMethodCallHandler((MethodCall methodCall) async {
+        if (methodCall.method == 'getApplicationSupportDirectory') {
+          return '/tmp/test_app_support';
+        }
+        return null;
+      });
+
       authService = MockAuthService();
       positionResolver = PositionResolver();
       sessionBroker = SessionBroker();

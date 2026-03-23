@@ -27,6 +27,25 @@ dependencies:
   # UUID generation
   uuid: ^4.2.1
 
+  # Path manipulation and provider
+  path_provider: ^2.1.0
+  path: ^1.8.3
+
+  # New for Phase 2: Module update system
+  pointycastle: ^3.7.0      # RSA signature verification
+  http: ^1.1.0              # Module downloads
+  pub_semver: ^2.1.0        # Version comparison
+  sqflite: ^2.3.0           # SQLite for failure tracking and last-known-good
+  connectivity_plus: 5.0.0
+
+  # Phase 5: Camera/Scanner integration
+  mobile_scanner: ^5.0.0    # Barcode and QR code scanning
+  permission_handler: ^11.0.0  # Camera permission management
+
+  # Phase 5.1: Photo capture
+  camera: ^0.10.0           # Still photo capture
+  image: ^4.0.0             # Image processing and compression
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
@@ -35,6 +54,9 @@ dev_dependencies:
   json_serializable: ^6.7.1
   integration_test:
     sdk: flutter
+  mockito: ^5.4.0           # Mock generation for tests
 
 flutter:
   uses-material-design: true
+  assets:
+    - assets/modules/sample-warehouse/

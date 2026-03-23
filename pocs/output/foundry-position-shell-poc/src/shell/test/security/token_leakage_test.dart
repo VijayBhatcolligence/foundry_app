@@ -27,10 +27,62 @@ void main() {
       // Use in-memory secure storage for testing
       FlutterSecureStorage.setMockInitialValues({});
 
+      // CRITICAL: Mock test_bridge channel BEFORE creating ShellBridge
+      methodChannel = const MethodChannel('test_bridge');
+
+      // Set up mock handlers for all bridge methods
+      methodChannel.setMockMethodCallHandler((MethodCall call) async {
+        switch (call.method) {
+          case 'getBootstrapCode':
+            return {
+              'success': true,
+              'data': {
+                'bootstrapCode': 'mock-bootstrap-${DateTime.now().millisecondsSinceEpoch}',
+                'expiresAt': DateTime.now().add(const Duration(seconds: 60)).toIso8601String(),
+              },
+            };
+          case 'redeemBootstrap':
+            final bootstrapCode = call.arguments['bootstrapCode'] as String?;
+            return {
+              'success': true,
+              'data': {
+                'sessionId': 'mock-session-${DateTime.now().millisecondsSinceEpoch}',
+                'positionId': 'WAREHOUSE-CLERK-01',
+                'orgId': 'ORG001',
+              },
+            };
+          case 'validateSession':
+            return {
+              'success': true,
+              'data': {
+                'isValid': true,
+                'session': {
+                  'sessionId': call.arguments['sessionId'],
+                  'positionId': 'WAREHOUSE-CLERK-01',
+                  'orgId': 'ORG001',
+                },
+              },
+            };
+          case 'getPositionContext':
+            return {
+              'success': true,
+              'data': {
+                'position': {
+                  'positionId': 'WAREHOUSE-CLERK-01',
+                  'positionName': 'Warehouse Clerk',
+                  'orgId': 'ORG001',
+                  'roleContext': {},
+                },
+              },
+            };
+          default:
+            return null;
+        }
+      });
+
       authService = MockAuthService();
       positionResolver = PositionResolver();
       sessionBroker = SessionBroker();
-      methodChannel = const MethodChannel('test_bridge');
       shellBridge = ShellBridge(
         channel: methodChannel,
         authService: authService,
@@ -40,6 +92,7 @@ void main() {
     });
 
     tearDown(() {
+      methodChannel.setMockMethodCallHandler(null);
       sessionBroker.clearAll();
     });
 

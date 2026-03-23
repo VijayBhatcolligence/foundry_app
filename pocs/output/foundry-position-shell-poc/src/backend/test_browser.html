@@ -1,0 +1,630 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Warehouse Clerk - Browser Test</title>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            padding: 16px;
+            background: #f5f5f5;
+        }
+        .warehouse-app {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        .header {
+            margin-bottom: 20px;
+            padding-bottom: 16px;
+            border-bottom: 2px solid #e0e0e0;
+        }
+        .header h2 {
+            color: #333;
+            margin-bottom: 8px;
+        }
+        .connection-status {
+            display: inline-block;
+            padding: 6px 12px;
+            border-radius: 4px;
+            font-size: 14px;
+            font-weight: 500;
+            margin-top: 8px;
+        }
+        .connection-status.connected {
+            background: #e8f5e9;
+            color: #2e7d32;
+        }
+        .connection-status.error {
+            background: #ffebee;
+            color: #c62828;
+        }
+        .tabs {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 16px;
+            border-bottom: 2px solid #e0e0e0;
+        }
+        .tab-button {
+            padding: 12px 24px;
+            border: none;
+            background: none;
+            cursor: pointer;
+            font-size: 16px;
+            color: #666;
+            border-bottom: 3px solid transparent;
+            transition: all 0.3s;
+        }
+        .tab-button.active {
+            color: #2196f3;
+            border-bottom-color: #2196f3;
+        }
+        .tab-button:hover {
+            color: #1976d2;
+        }
+        .form-section {
+            margin-bottom: 24px;
+        }
+        .form-section h3 {
+            margin-bottom: 12px;
+            color: #333;
+        }
+        .form-group {
+            margin-bottom: 16px;
+        }
+        .form-group label {
+            display: block;
+            margin-bottom: 4px;
+            font-weight: 500;
+            color: #555;
+        }
+        .form-group input {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 16px;
+        }
+        .form-group input:focus {
+            outline: none;
+            border-color: #2196f3;
+            box-shadow: 0 0 0 2px rgba(33, 150, 243, 0.1);
+        }
+        .line-items {
+            margin-top: 16px;
+        }
+        .line-items-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+        .line-item {
+            display: grid;
+            grid-template-columns: 2fr 3fr 1fr 2fr 40px;
+            gap: 8px;
+            margin-bottom: 8px;
+            padding: 12px;
+            background: #f9f9f9;
+            border-radius: 4px;
+        }
+        .line-item input {
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        .remove-btn {
+            background: #f44336;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 18px;
+            padding: 0;
+        }
+        .remove-btn:hover {
+            background: #d32f2f;
+        }
+        .add-btn, .submit-btn {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: 500;
+            margin-top: 12px;
+            transition: background 0.3s;
+        }
+        .add-btn {
+            background: #2196f3;
+            color: white;
+        }
+        .add-btn:hover {
+            background: #1976d2;
+        }
+        .add-btn:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        .submit-btn {
+            background: #4caf50;
+            color: white;
+            width: 100%;
+        }
+        .submit-btn:hover {
+            background: #388e3c;
+        }
+        .submit-btn:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        .error {
+            color: #c62828;
+            padding: 12px;
+            background: #ffebee;
+            border-radius: 4px;
+            margin-top: 12px;
+            border-left: 4px solid #f44336;
+        }
+        .success {
+            color: #2e7d32;
+            padding: 12px;
+            background: #e8f5e9;
+            border-radius: 4px;
+            margin-top: 12px;
+            border-left: 4px solid #4caf50;
+        }
+        .transaction-history {
+            margin-top: 16px;
+        }
+        .history-item {
+            padding: 16px;
+            background: #f9f9f9;
+            border-radius: 4px;
+            margin-bottom: 12px;
+            border-left: 4px solid #2196f3;
+        }
+        .history-item-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+        .history-item-header strong {
+            color: #333;
+            font-size: 16px;
+        }
+        .status-badge {
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 500;
+            background: #e3f2fd;
+            color: #1976d2;
+        }
+        .history-item-details {
+            color: #666;
+            font-size: 14px;
+            line-height: 1.6;
+        }
+        .history-item-details div {
+            margin-bottom: 4px;
+        }
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #999;
+        }
+        .empty-state {
+            text-align: center;
+            padding: 40px;
+            color: #999;
+        }
+        .refresh-info {
+            font-size: 12px;
+            color: #999;
+            text-align: center;
+            margin-top: 12px;
+        }
+        .test-banner {
+            background: #fff3e0;
+            border: 2px solid #ff9800;
+            border-radius: 4px;
+            padding: 12px;
+            margin-bottom: 16px;
+            color: #e65100;
+            font-weight: 500;
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect } = React;
+
+        // For browser testing, use localhost:3000
+        const BACKEND_URL = 'http://localhost:3000';
+
+        function WarehouseApp() {
+            const [activeTab, setActiveTab] = useState('create');
+            const [backendStatus, setBackendStatus] = useState('unknown');
+            const [transaction, setTransaction] = useState({
+                poNumber: '',
+                vendor: '',
+                lineItems: []
+            });
+            const [submittedTransactions, setSubmittedTransactions] = useState([]);
+            const [isSubmitting, setIsSubmitting] = useState(false);
+            const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+            const [message, setMessage] = useState(null);
+
+            // Check backend health on mount
+            useEffect(() => {
+                checkBackendHealth();
+            }, []);
+
+            // Load transaction history when history tab is active
+            useEffect(() => {
+                if (activeTab === 'history') {
+                    loadTransactionHistory();
+                    const interval = setInterval(loadTransactionHistory, 5000);
+                    return () => clearInterval(interval);
+                }
+            }, [activeTab]);
+
+            const checkBackendHealth = async () => {
+                try {
+                    const response = await fetch(`${BACKEND_URL}/api/health`, {
+                        method: 'GET',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                    });
+
+                    if (response.ok) {
+                        setBackendStatus('connected');
+                    } else {
+                        setBackendStatus('error');
+                    }
+                } catch (err) {
+                    console.error('[Health Check] Error:', err);
+                    setBackendStatus('error');
+                }
+            };
+
+            const loadTransactionHistory = async () => {
+                setIsLoadingHistory(true);
+                try {
+                    const response = await fetch(`${BACKEND_URL}/api/transactions`, {
+                        method: 'GET',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                    });
+
+                    const result = await response.json();
+
+                    if (response.ok && result.success) {
+                        setSubmittedTransactions(result.transactions || []);
+                        setBackendStatus('connected');
+                    } else {
+                        console.error('[History] Load failed:', result.error);
+                        setBackendStatus('error');
+                    }
+                } catch (err) {
+                    console.error('[History] Network error:', err);
+                    setBackendStatus('error');
+                } finally {
+                    setIsLoadingHistory(false);
+                }
+            };
+
+            const addLineItem = () => {
+                if (transaction.lineItems.length >= 50) {
+                    setMessage({ type: 'error', text: 'Maximum 50 line items reached' });
+                    return;
+                }
+
+                setTransaction(prev => ({
+                    ...prev,
+                    lineItems: [...prev.lineItems, {
+                        id: Date.now(),
+                        sku: '',
+                        description: '',
+                        quantity: '',
+                        location: ''
+                    }]
+                }));
+            };
+
+            const removeLineItem = (id) => {
+                setTransaction(prev => ({
+                    ...prev,
+                    lineItems: prev.lineItems.filter(item => item.id !== id)
+                }));
+            };
+
+            const updateLineItem = (id, field, value) => {
+                setTransaction(prev => ({
+                    ...prev,
+                    lineItems: prev.lineItems.map(item =>
+                        item.id === id ? { ...item, [field]: value } : item
+                    )
+                }));
+            };
+
+            const handleSubmit = async () => {
+                // Validation
+                if (!transaction.poNumber.trim()) {
+                    setMessage({ type: 'error', text: 'PO Number is required' });
+                    return;
+                }
+                if (!transaction.vendor.trim()) {
+                    setMessage({ type: 'error', text: 'Vendor is required' });
+                    return;
+                }
+                if (transaction.lineItems.length === 0) {
+                    setMessage({ type: 'error', text: 'At least one line item is required' });
+                    return;
+                }
+
+                // Validate line items
+                for (const item of transaction.lineItems) {
+                    if (!item.sku.trim() || !item.quantity || !item.location.trim()) {
+                        setMessage({ type: 'error', text: 'All line item fields are required (SKU, Quantity, Location)' });
+                        return;
+                    }
+                }
+
+                setIsSubmitting(true);
+                setMessage(null);
+
+                try {
+                    const payload = {
+                        transactionId: `TXN-${Date.now()}`,
+                        poNumber: transaction.poNumber,
+                        vendor: transaction.vendor,
+                        lineItems: transaction.lineItems.map(({ id, ...item }) => item),
+                        createdAt: Date.now()
+                    };
+
+                    console.log('[Submit] Sending to backend:', payload);
+
+                    const controller = new AbortController();
+                    const timeoutId = setTimeout(() => controller.abort(), 10000);
+
+                    const response = await fetch(`${BACKEND_URL}/api/transactions`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify(payload),
+                        signal: controller.signal
+                    });
+
+                    clearTimeout(timeoutId);
+
+                    const result = await response.json();
+
+                    if (response.ok && result.success) {
+                        setMessage({
+                            type: 'success',
+                            text: `Transaction ${transaction.poNumber} submitted successfully! Server ID: ${result.transactionId}`
+                        });
+                        setTransaction({
+                            poNumber: '',
+                            vendor: '',
+                            lineItems: []
+                        });
+                        setBackendStatus('connected');
+                        if (activeTab === 'history') {
+                            setTimeout(loadTransactionHistory, 500);
+                        }
+                    } else {
+                        setMessage({
+                            type: 'error',
+                            text: `Submission failed: ${result.error || 'Unknown error'}`
+                        });
+                        setBackendStatus('error');
+                    }
+                } catch (err) {
+                    console.error('[Submit] Error:', err);
+                    if (err.name === 'AbortError') {
+                        setMessage({
+                            type: 'error',
+                            text: 'Request timeout. Backend may be slow or unreachable.'
+                        });
+                    } else {
+                        setMessage({
+                            type: 'error',
+                            text: `Network error: ${err.message}. Is backend running at ${BACKEND_URL}?`
+                        });
+                    }
+                    setBackendStatus('error');
+                } finally {
+                    setIsSubmitting(false);
+                }
+            };
+
+            return (
+                <div className="warehouse-app">
+                    <div className="test-banner">
+                        Browser Test Mode - Backend: {BACKEND_URL}
+                    </div>
+
+                    <div className="header">
+                        <h2>Warehouse Clerk - Online Mode</h2>
+                        <div className={`connection-status ${backendStatus}`}>
+                            {backendStatus === 'connected' && 'Backend Connected'}
+                            {backendStatus === 'error' && 'Backend Disconnected'}
+                            {backendStatus === 'unknown' && 'Checking connection...'}
+                        </div>
+                    </div>
+
+                    <div className="tabs">
+                        <button
+                            className={`tab-button ${activeTab === 'create' ? 'active' : ''}`}
+                            onClick={() => setActiveTab('create')}
+                        >
+                            Create Transaction
+                        </button>
+                        <button
+                            className={`tab-button ${activeTab === 'history' ? 'active' : ''}`}
+                            onClick={() => setActiveTab('history')}
+                        >
+                            Transaction History ({submittedTransactions.length})
+                        </button>
+                    </div>
+
+                    {activeTab === 'create' && (
+                        <div className="form-section">
+                            <h3>New Receiving Transaction</h3>
+
+                            <div className="form-group">
+                                <label>PO Number *</label>
+                                <input
+                                    type="text"
+                                    value={transaction.poNumber}
+                                    onChange={(e) => setTransaction(prev => ({ ...prev, poNumber: e.target.value }))}
+                                    placeholder="PO-20260318-001"
+                                />
+                            </div>
+
+                            <div className="form-group">
+                                <label>Vendor *</label>
+                                <input
+                                    type="text"
+                                    value={transaction.vendor}
+                                    onChange={(e) => setTransaction(prev => ({ ...prev, vendor: e.target.value }))}
+                                    placeholder="Acme Manufacturing Corp"
+                                />
+                            </div>
+
+                            <div className="line-items">
+                                <div className="line-items-header">
+                                    <h4>Line Items ({transaction.lineItems.length} / 50)</h4>
+                                </div>
+
+                                {transaction.lineItems.map(item => (
+                                    <div key={item.id} className="line-item">
+                                        <input
+                                            type="text"
+                                            value={item.sku}
+                                            onChange={(e) => updateLineItem(item.id, 'sku', e.target.value)}
+                                            placeholder="SKU"
+                                        />
+                                        <input
+                                            type="text"
+                                            value={item.description}
+                                            onChange={(e) => updateLineItem(item.id, 'description', e.target.value)}
+                                            placeholder="Description"
+                                        />
+                                        <input
+                                            type="number"
+                                            value={item.quantity}
+                                            onChange={(e) => updateLineItem(item.id, 'quantity', e.target.value)}
+                                            placeholder="Qty"
+                                        />
+                                        <input
+                                            type="text"
+                                            value={item.location}
+                                            onChange={(e) => updateLineItem(item.id, 'location', e.target.value)}
+                                            placeholder="Location"
+                                        />
+                                        <button
+                                            className="remove-btn"
+                                            onClick={() => removeLineItem(item.id)}
+                                        >
+                                            ×
+                                        </button>
+                                    </div>
+                                ))}
+
+                                <button
+                                    className="add-btn"
+                                    onClick={addLineItem}
+                                    disabled={transaction.lineItems.length >= 50}
+                                >
+                                    + Add Line Item
+                                </button>
+                            </div>
+
+                            <button
+                                className="submit-btn"
+                                onClick={handleSubmit}
+                                disabled={isSubmitting || transaction.lineItems.length === 0}
+                            >
+                                {isSubmitting ? 'Submitting to Backend...' : 'Submit Transaction'}
+                            </button>
+
+                            {message && (
+                                <div className={message.type}>
+                                    {message.text}
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    {activeTab === 'history' && (
+                        <div className="form-section">
+                            <h3>Transaction History</h3>
+
+                            {isLoadingHistory && submittedTransactions.length === 0 ? (
+                                <div className="loading">Loading transactions from backend...</div>
+                            ) : submittedTransactions.length === 0 ? (
+                                <div className="empty-state">
+                                    <p>No transactions submitted yet</p>
+                                    <p style={{ fontSize: '14px', marginTop: '8px' }}>
+                                        Submit a transaction from the Create tab to see it here
+                                    </p>
+                                </div>
+                            ) : (
+                                <div className="transaction-history">
+                                    {submittedTransactions.map(tx => (
+                                        <div key={tx.transaction_id} className="history-item">
+                                            <div className="history-item-header">
+                                                <strong>PO: {tx.po_number}</strong>
+                                                <span className="status-badge">{tx.status}</span>
+                                            </div>
+                                            <div className="history-item-details">
+                                                <div><strong>Transaction ID:</strong> {tx.transaction_id}</div>
+                                                <div><strong>Vendor:</strong> {tx.vendor}</div>
+                                                <div><strong>Line Items:</strong> {tx.lineItems.length} item(s)</div>
+                                                <div><strong>Submitted:</strong> {new Date(tx.created_at).toLocaleString()}</div>
+                                                <div><strong>Received by Backend:</strong> {new Date(tx.received_at).toLocaleString()}</div>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+
+                            <div className="refresh-info">
+                                Auto-refreshing every 5 seconds
+                            </div>
+                        </div>
+                    )}
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<WarehouseApp />);
+
+        console.log('[Warehouse Module] React app mounted - Browser test mode');
+        console.log('[Warehouse Module] Backend URL:', BACKEND_URL);
+    </script>
+</body>
+</html>

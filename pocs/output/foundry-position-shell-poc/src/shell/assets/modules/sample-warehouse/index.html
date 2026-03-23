@@ -1,0 +1,1857 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Warehouse Clerk</title>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            padding: 16px;
+            background: #f5f5f5;
+        }
+        .warehouse-app {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        .header {
+            margin-bottom: 20px;
+            padding-bottom: 16px;
+            border-bottom: 2px solid #e0e0e0;
+        }
+        .header h2 {
+            color: #333;
+            margin-bottom: 8px;
+        }
+        .connection-status {
+            display: inline-block;
+            padding: 6px 12px;
+            border-radius: 4px;
+            font-size: 14px;
+            font-weight: 500;
+            margin-top: 8px;
+        }
+        .connection-status.connected {
+            background: #e8f5e9;
+            color: #2e7d32;
+        }
+        .connection-status.error {
+            background: #ffebee;
+            color: #c62828;
+        }
+        .tabs {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 16px;
+            border-bottom: 2px solid #e0e0e0;
+        }
+        .tab-button {
+            padding: 12px 24px;
+            border: none;
+            background: none;
+            cursor: pointer;
+            font-size: 16px;
+            color: #666;
+            border-bottom: 3px solid transparent;
+            transition: all 0.3s;
+        }
+        .tab-button.active {
+            color: #2196f3;
+            border-bottom-color: #2196f3;
+        }
+        .tab-button:hover {
+            color: #1976d2;
+        }
+        .form-section {
+            margin-bottom: 24px;
+        }
+        .form-section h3 {
+            margin-bottom: 12px;
+            color: #333;
+        }
+        .form-group {
+            margin-bottom: 16px;
+        }
+        .form-group label {
+            display: block;
+            margin-bottom: 4px;
+            font-weight: 500;
+            color: #555;
+        }
+        .form-group input {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 16px;
+        }
+        .form-group input:focus {
+            outline: none;
+            border-color: #2196f3;
+            box-shadow: 0 0 0 2px rgba(33, 150, 243, 0.1);
+        }
+        .line-items {
+            margin-top: 16px;
+        }
+        .line-items-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+        .line-item {
+            display: grid;
+            grid-template-columns: 2.5fr 3fr 1fr 2.5fr 40px;
+            gap: 8px;
+            padding: 12px;
+            background: #f9f9f9;
+            border-radius: 4px;
+        }
+        .input-with-scan {
+            display: flex;
+            gap: 4px;
+            align-items: center;
+        }
+        .input-with-scan input {
+            flex: 1;
+        }
+        .scan-btn {
+            background: #2196f3;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            padding: 8px;
+            font-size: 18px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 36px;
+            height: 36px;
+            flex-shrink: 0;
+        }
+        .scan-btn:hover {
+            background: #1976d2;
+        }
+        .scan-btn:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        .line-item input {
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        .remove-btn {
+            background: #f44336;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 18px;
+            padding: 0;
+        }
+        .remove-btn:hover {
+            background: #d32f2f;
+        }
+        .add-btn, .submit-btn {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: 500;
+            margin-top: 12px;
+            transition: background 0.3s;
+        }
+        .add-btn {
+            background: #2196f3;
+            color: white;
+        }
+        .add-btn:hover {
+            background: #1976d2;
+        }
+        .add-btn:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        .submit-btn {
+            background: #4caf50;
+            color: white;
+            width: 100%;
+        }
+        .submit-btn:hover {
+            background: #388e3c;
+        }
+        .submit-btn:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        .error {
+            color: #c62828;
+            padding: 12px;
+            background: #ffebee;
+            border-radius: 4px;
+            margin-top: 12px;
+            border-left: 4px solid #f44336;
+        }
+        .success {
+            color: #2e7d32;
+            padding: 12px;
+            background: #e8f5e9;
+            border-radius: 4px;
+            margin-top: 12px;
+            border-left: 4px solid #4caf50;
+        }
+        .transaction-history {
+            margin-top: 16px;
+        }
+        .history-item {
+            padding: 16px;
+            background: #f9f9f9;
+            border-radius: 4px;
+            margin-bottom: 12px;
+            border-left: 4px solid #2196f3;
+        }
+        .history-item-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+        .history-item-header strong {
+            color: #333;
+            font-size: 16px;
+        }
+        .history-item-details {
+            color: #666;
+            font-size: 14px;
+            line-height: 1.6;
+        }
+        .history-item-details div {
+            margin-bottom: 4px;
+        }
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #999;
+        }
+        .empty-state {
+            text-align: center;
+            padding: 40px;
+            color: #999;
+        }
+        .refresh-info {
+            font-size: 12px;
+            color: #999;
+            text-align: center;
+            margin-top: 12px;
+        }
+        /* Phase 5.1: Photo styles */
+        .photo-gallery {
+            margin-top: 12px;
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+            gap: 12px;
+        }
+        .photo-thumbnail {
+            position: relative;
+            width: 150px;
+            height: 150px;
+            border-radius: 8px;
+            overflow: hidden;
+            border: 2px solid #ddd;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .photo-thumbnail:hover {
+            border-color: #2196f3;
+            box-shadow: 0 4px 12px rgba(33, 150, 243, 0.3);
+            transform: scale(1.05);
+        }
+        .photo-thumbnail img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+        .photo-delete-btn {
+            position: absolute;
+            top: 2px;
+            right: 2px;
+            background: rgba(244, 67, 54, 0.9);
+            color: white;
+            border: none;
+            border-radius: 50%;
+            width: 20px;
+            height: 20px;
+            font-size: 12px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0;
+        }
+        .photo-delete-btn:hover {
+            background: #f44336;
+        }
+        .photo-btn {
+            background: #9c27b0;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            padding: 8px;
+            font-size: 18px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 36px;
+            height: 36px;
+            flex-shrink: 0;
+        }
+        .photo-btn:hover {
+            background: #7b1fa2;
+        }
+        .photo-btn:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        .photo-modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.8);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+        .photo-modal.open {
+            display: flex;
+        }
+        .photo-modal-content {
+            position: relative;
+            max-width: 95vw;
+            max-height: 95vh;
+        }
+        .photo-modal-content img {
+            max-width: 100%;
+            max-height: 95vh;
+            object-fit: contain;
+            border-radius: 8px;
+        }
+        .photo-modal-close {
+            position: absolute;
+            top: -40px;
+            right: 0;
+            background: white;
+            color: #333;
+            border: none;
+            border-radius: 50%;
+            width: 32px;
+            height: 32px;
+            font-size: 20px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .photo-modal-close:hover {
+            background: #f5f5f5;
+        }
+        /* Menu Card Styles */
+        .menu-container {
+            padding: 20px;
+        }
+        .menu-cards {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-top: 20px;
+        }
+        .menu-card {
+            background: white;
+            border-radius: 12px;
+            padding: 30px;
+            text-align: center;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            cursor: pointer;
+            transition: all 0.3s;
+            border: 2px solid transparent;
+        }
+        .menu-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 8px 24px rgba(0,0,0,0.15);
+            border-color: #2196f3;
+        }
+        .card-icon {
+            font-size: 64px;
+            margin-bottom: 16px;
+        }
+        .menu-card h3 {
+            color: #333;
+            margin-bottom: 8px;
+            font-size: 20px;
+        }
+        .menu-card p {
+            color: #666;
+            font-size: 14px;
+            margin-bottom: 16px;
+        }
+        .menu-card button {
+            background: #2196f3;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            padding: 10px 24px;
+            font-size: 16px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+        .menu-card button:hover {
+            background: #1976d2;
+        }
+        /* Back button */
+        .back-btn {
+            background: #757575;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            padding: 10px 20px;
+            font-size: 16px;
+            font-weight: 500;
+            cursor: pointer;
+            margin-bottom: 20px;
+            transition: background 0.3s;
+        }
+        .back-btn:hover {
+            background: #616161;
+        }
+        /* Temperature display */
+        .temp-display {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 40px;
+            border-radius: 12px;
+            margin: 20px 0;
+            text-align: center;
+        }
+        .temp-display h3 {
+            font-size: 48px;
+            margin: 0;
+            color: white;
+        }
+        .temp-display p {
+            font-size: 18px;
+            margin-top: 8px;
+            color: rgba(255,255,255,0.9);
+        }
+        /* Feature specific buttons */
+        .feature-btn {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: 500;
+            margin: 8px;
+            transition: background 0.3s;
+        }
+        .feature-btn.primary {
+            background: #2196f3;
+            color: white;
+        }
+        .feature-btn.primary:hover {
+            background: #1976d2;
+        }
+        .feature-btn.success {
+            background: #4caf50;
+            color: white;
+            width: 100%;
+        }
+        .feature-btn.success:hover {
+            background: #388e3c;
+        }
+        .feature-btn:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        /* Complaint type select */
+        select {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 16px;
+            margin-bottom: 16px;
+        }
+        select:focus {
+            outline: none;
+            border-color: #2196f3;
+            box-shadow: 0 0 0 2px rgba(33, 150, 243, 0.1);
+        }
+        /* Textarea */
+        textarea {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 16px;
+            margin-bottom: 16px;
+            min-height: 100px;
+            font-family: inherit;
+            resize: vertical;
+        }
+        textarea:focus {
+            outline: none;
+            border-color: #2196f3;
+            box-shadow: 0 0 0 2px rgba(33, 150, 243, 0.1);
+        }
+        /* Product info display */
+        .product-info {
+            background: #e3f2fd;
+            padding: 16px;
+            border-radius: 8px;
+            margin: 16px 0;
+            border-left: 4px solid #2196f3;
+        }
+        .product-info p {
+            margin: 8px 0;
+            color: #333;
+        }
+        /* Photo preview */
+        .photo-preview {
+            margin: 16px 0;
+        }
+        .photo-preview img {
+            width: 150px;
+            height: 150px;
+            object-fit: cover;
+            border-radius: 8px;
+            border: 2px solid #ddd;
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect } = React;
+
+        // Check if bridge is ready
+        function isBridgeReady() {
+            return typeof window.shellBridge !== 'undefined' &&
+                   typeof window.shellBridge.scanBarcode === 'function' &&
+                   typeof window.shellBridge.capturePhoto === 'function' &&
+                   typeof window.shellBridge.deletePhoto === 'function' &&
+                   typeof window.shellBridge.listPhotos === 'function';
+        }
+
+        // Product lookup by barcode
+        async function lookupProduct(barcode) {
+            const url = `http://192.168.0.163:3000/api/products/${barcode}`;
+            console.log('[Product Lookup] Fetching:', url);
+
+            const response = await fetch(url, {
+                method: 'GET',
+                headers: {
+                    'Accept': 'application/json',
+                },
+            });
+
+            if (!response.ok) {
+                if (response.status === 404) {
+                    throw new Error('Product not found');
+                }
+                throw new Error(`HTTP ${response.status}`);
+            }
+
+            const data = await response.json();
+            console.log('[Product Lookup] Result:', data);
+
+            if (!data.success || !data.product) {
+                throw new Error('Product not found');
+            }
+
+            return data.product;
+        }
+
+        // Handle barcode scan
+        async function handleBarcodeScan(itemId, setMessage, transaction, setTransaction, setIsSubmitting) {
+            if (!isBridgeReady()) {
+                setMessage({ type: 'error', text: 'Scanner not available. Please try again.' });
+                return;
+            }
+
+            try {
+                setIsSubmitting(true);
+                setMessage({ type: 'info', text: 'Opening scanner...' });
+
+                console.log('[Scanner] Calling scanBarcode()...');
+                const scanResult = await window.shellBridge.scanBarcode();
+
+                console.log('[Scanner] Scan result:', scanResult);
+
+                if (scanResult.data && scanResult.data.success) {
+                    const barcode = scanResult.data.barcode;
+                    const format = scanResult.data.format;
+
+                    console.log('[Scanner] Barcode detected:', barcode, format);
+                    setMessage({ type: 'info', text: `Barcode scanned: ${barcode}. Looking up product...` });
+
+                    // Lookup product
+                    try {
+                        const product = await lookupProduct(barcode);
+
+                        console.log('[Product] Found:', product);
+
+                        // Auto-fill line item fields
+                        setTransaction(prev => ({
+                            ...prev,
+                            lineItems: prev.lineItems.map(item =>
+                                item.id === itemId ? {
+                                    ...item,
+                                    sku: product.sku || barcode,
+                                    description: product.name || product.description || '',
+                                    location: product.default_location || item.location
+                                } : item
+                            )
+                        }));
+
+                        setMessage({ type: 'success', text: `Product found: ${product.name}` });
+
+                    } catch (lookupErr) {
+                        console.error('[Product Lookup] Error:', lookupErr);
+
+                        // Still fill in the barcode, let user fill rest manually
+                        setTransaction(prev => ({
+                            ...prev,
+                            lineItems: prev.lineItems.map(item =>
+                                item.id === itemId ? { ...item, sku: barcode } : item
+                            )
+                        }));
+
+                        setMessage({
+                            type: 'error',
+                            text: `Product not found for barcode ${barcode}. Enter details manually.`
+                        });
+                    }
+
+                } else {
+                    const error = scanResult.data?.error || 'Scan failed';
+                    console.log('[Scanner] Error:', error);
+                    setMessage({ type: 'error', text: error });
+                }
+
+            } catch (err) {
+                console.error('[Scanner] Exception:', err);
+                setMessage({ type: 'error', text: `Scanner error: ${err.message}` });
+            } finally {
+                setIsSubmitting(false);
+            }
+        }
+
+        // Handle QR code scan
+        async function handleQRScan(itemId, setMessage, transaction, setTransaction, setIsSubmitting) {
+            if (!isBridgeReady()) {
+                setMessage({ type: 'error', text: 'Scanner not available. Please try again.' });
+                return;
+            }
+
+            try {
+                setIsSubmitting(true);
+                setMessage({ type: 'info', text: 'Opening QR scanner...' });
+
+                console.log('[Scanner] Calling scanBarcode() for QR code...');
+                const scanResult = await window.shellBridge.scanBarcode();
+
+                console.log('[Scanner] QR scan result:', scanResult);
+
+                if (scanResult.data && scanResult.data.success) {
+                    const qrCode = scanResult.data.barcode;
+
+                    console.log('[Scanner] QR code detected:', qrCode);
+
+                    // Auto-fill location field
+                    setTransaction(prev => ({
+                        ...prev,
+                        lineItems: prev.lineItems.map(item =>
+                            item.id === itemId ? { ...item, location: qrCode } : item
+                        )
+                    }));
+
+                    setMessage({ type: 'success', text: `Location scanned: ${qrCode}` });
+
+                } else {
+                    const error = scanResult.data?.error || 'Scan failed';
+                    console.log('[Scanner] Error:', error);
+                    setMessage({ type: 'error', text: error });
+                }
+
+            } catch (err) {
+                console.error('[Scanner] Exception:', err);
+                setMessage({ type: 'error', text: `Scanner error: ${err.message}` });
+            } finally {
+                setIsSubmitting(false);
+            }
+        }
+
+        // Phase 5.1: Handle photo capture
+        async function handlePhotoCapture(itemId, setMessage, transaction, setTransaction, setIsSubmitting) {
+            if (!isBridgeReady()) {
+                setMessage({ type: 'error', text: 'Photo capture not available. Please try again.' });
+                return;
+            }
+
+            // Check 5 photo limit
+            const item = transaction.lineItems.find(i => i.id === itemId);
+            if (item && item.photos && item.photos.length >= 5) {
+                setMessage({ type: 'error', text: 'Maximum 5 photos per item reached' });
+                return;
+            }
+
+            try {
+                setIsSubmitting(true);
+                setMessage({ type: 'info', text: 'Opening camera...' });
+
+                console.log('[Photo] Calling capturePhoto()...');
+                const photoResult = await window.shellBridge.capturePhoto(String(itemId));
+
+                console.log('[Photo] Capture result:', photoResult);
+
+                if (photoResult.data && photoResult.data.success) {
+                    const photo = {
+                        path: photoResult.data.photoPath,
+                        thumbnailPath: photoResult.data.thumbnailPath,
+                        timestamp: photoResult.data.timestamp || Date.now()
+                    };
+
+                    console.log('[Photo] Photo captured:', photo);
+
+                    // Add photo to line item
+                    setTransaction(prev => ({
+                        ...prev,
+                        lineItems: prev.lineItems.map(item =>
+                            item.id === itemId ? {
+                                ...item,
+                                photos: [...(item.photos || []), photo]
+                            } : item
+                        )
+                    }));
+
+                    setMessage({ type: 'success', text: 'Photo captured successfully' });
+
+                } else {
+                    const error = photoResult.data?.error || 'Photo capture failed';
+                    console.log('[Photo] Error:', error);
+                    setMessage({ type: 'error', text: error });
+                }
+
+            } catch (err) {
+                console.error('[Photo] Exception:', err);
+                setMessage({ type: 'error', text: `Photo error: ${err.message}` });
+            } finally {
+                setIsSubmitting(false);
+            }
+        }
+
+        // Phase 5.1: Handle photo deletion
+        async function handlePhotoDelete(itemId, photoIndex, setMessage, transaction, setTransaction) {
+            const item = transaction.lineItems.find(i => i.id === itemId);
+            if (!item || !item.photos || !item.photos[photoIndex]) {
+                return;
+            }
+
+            const photo = item.photos[photoIndex];
+
+            try {
+                console.log('[Photo] Deleting photo:', photo.path);
+
+                const deleteResult = await window.shellBridge.deletePhoto(photo.path);
+
+                console.log('[Photo] Delete result:', deleteResult);
+
+                if (deleteResult.data && deleteResult.data.success) {
+                    // Remove photo from line item
+                    setTransaction(prev => ({
+                        ...prev,
+                        lineItems: prev.lineItems.map(item =>
+                            item.id === itemId ? {
+                                ...item,
+                                photos: item.photos.filter((_, idx) => idx !== photoIndex)
+                            } : item
+                        )
+                    }));
+
+                    setMessage({ type: 'success', text: 'Photo deleted' });
+                } else {
+                    const error = deleteResult.data?.error || 'Delete failed';
+                    setMessage({ type: 'error', text: error });
+                }
+
+            } catch (err) {
+                console.error('[Photo] Delete exception:', err);
+                setMessage({ type: 'error', text: `Delete error: ${err.message}` });
+            }
+        }
+
+        // Phase 5.1: Show photo modal
+        function showPhotoModal(photoPath) {
+            const modal = document.getElementById('photo-modal');
+            const modalImg = document.getElementById('modal-photo');
+            modalImg.src = photoPath;
+            modal.classList.add('open');
+        }
+
+        // Phase 5.1: Close photo modal
+        function closePhotoModal() {
+            const modal = document.getElementById('photo-modal');
+            modal.classList.remove('open');
+        }
+
+        // Direct HTTP POST with detailed logging
+        async function submitTransaction(transactionData) {
+            const url = 'http://192.168.0.163:3000/api/transactions';
+
+            console.log('[HTTP] Submitting to:', url);
+            console.log('[HTTP] Data:', transactionData);
+
+            const response = await fetch(url, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json',
+                },
+                body: JSON.stringify(transactionData),
+            });
+
+            if (!response.ok) {
+                const errorText = await response.text();
+                throw new Error(`HTTP ${response.status}: ${errorText}`);
+            }
+
+            const result = await response.json();
+            console.log('[HTTP] Submit result:', result);
+            return result;
+        }
+
+        // Direct HTTP GET with detailed logging
+        async function loadTransactionHistory() {
+            const url = 'http://192.168.0.163:3000/api/transactions';
+
+            console.log('[HTTP] Loading history from:', url);
+
+            const response = await fetch(url, {
+                method: 'GET',
+                headers: {
+                    'Accept': 'application/json',
+                },
+            });
+
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}`);
+            }
+
+            const data = await response.json();
+            console.log('[HTTP] History loaded:', data.transactions?.length || 0, 'transactions');
+            return data.transactions || [];
+        }
+
+        // Format timestamp for display
+        function formatTimestamp(timestamp) {
+            const date = new Date(timestamp);
+            return date.toLocaleString('en-US', {
+                month: 'short',
+                day: 'numeric',
+                year: 'numeric',
+                hour: 'numeric',
+                minute: '2-digit',
+                hour12: true
+            });
+        }
+
+        function WarehouseApp() {
+            const [activeView, setActiveView] = useState('menu'); // menu, receiving, waterTemp, complaints, receivingHistory, waterTempHistory, complaintsHistory
+            const [activeTab, setActiveTab] = useState('create');
+            const [backendStatus, setBackendStatus] = useState('unknown');
+            const [transaction, setTransaction] = useState({
+                poNumber: '',
+                vendor: '',
+                lineItems: []
+            });
+            const [submittedTransactions, setSubmittedTransactions] = useState([]);
+            const [waterTempChecks, setWaterTempChecks] = useState([]);
+            const [complaints, setComplaints] = useState([]);
+            const [isSubmitting, setIsSubmitting] = useState(false);
+            const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+            const [message, setMessage] = useState(null);
+
+            // Water temp state
+            const [tempF, setTempF] = useState(null);
+            const [tempC, setTempC] = useState(null);
+            const [tempPhoto, setTempPhoto] = useState(null);
+            const [tempLocation, setTempLocation] = useState('');
+
+            // Complaint state
+            const [complaintBarcode, setComplaintBarcode] = useState('');
+            const [complaintProduct, setComplaintProduct] = useState(null);
+            const [complaintType, setComplaintType] = useState('');
+            const [complaintDescription, setComplaintDescription] = useState('');
+            const [complaintPhoto, setComplaintPhoto] = useState(null);
+
+            // Backend health check - polls every 5 seconds
+            useEffect(() => {
+                checkBackendHealth();
+                const interval = setInterval(checkBackendHealth, 5000);
+                return () => clearInterval(interval);
+            }, []);
+
+            // Load transaction history when history tab is active
+            useEffect(() => {
+                if (activeTab === 'history' || activeView === 'receivingHistory') {
+                    loadHistory();
+                    const interval = setInterval(loadHistory, 5000);
+                    return () => clearInterval(interval);
+                }
+            }, [activeTab, activeView]);
+
+            // Load water temp history
+            useEffect(() => {
+                if (activeView === 'waterTempHistory') {
+                    loadWaterTempHistory();
+                    const interval = setInterval(loadWaterTempHistory, 5000);
+                    return () => clearInterval(interval);
+                }
+            }, [activeView]);
+
+            // Load complaints history
+            useEffect(() => {
+                if (activeView === 'complaintsHistory') {
+                    loadComplaintsHistory();
+                    const interval = setInterval(loadComplaintsHistory, 5000);
+                    return () => clearInterval(interval);
+                }
+            }, [activeView]);
+
+            const checkBackendHealth = async () => {
+                try {
+                    const url = 'http://192.168.0.163:3000/api/health';
+                    const response = await fetch(url, {
+                        method: 'GET',
+                        headers: {
+                            'Accept': 'application/json',
+                        },
+                    });
+
+                    if (response.ok) {
+                        setBackendStatus('connected');
+                        if (message && message.type === 'error') {
+                            setMessage(null);
+                        }
+                    } else {
+                        setBackendStatus('error');
+                        console.error('[HTTP] Backend error:', response.status);
+                    }
+                } catch (err) {
+                    setBackendStatus('error');
+                    console.error('[HTTP] Cannot reach backend:', err.message);
+                }
+            };
+
+            const loadHistory = async () => {
+                setIsLoadingHistory(true);
+                try {
+                    const transactions = await loadTransactionHistory();
+                    setSubmittedTransactions(transactions);
+                    setBackendStatus('connected');
+                } catch (err) {
+                    console.error('Failed to load history:', err);
+                    setBackendStatus('error');
+                } finally {
+                    setIsLoadingHistory(false);
+                }
+            };
+
+            const loadWaterTempHistory = async () => {
+                try {
+                    const url = 'http://192.168.0.163:3000/api/water-temp';
+                    const response = await fetch(url);
+                    if (response.ok) {
+                        const data = await response.json();
+                        setWaterTempChecks(data.checks || []);
+                        setBackendStatus('connected');
+                    }
+                } catch (err) {
+                    console.error('Failed to load water temp history:', err);
+                    setBackendStatus('error');
+                }
+            };
+
+            const loadComplaintsHistory = async () => {
+                try {
+                    const url = 'http://192.168.0.163:3000/api/complaints';
+                    const response = await fetch(url);
+                    if (response.ok) {
+                        const data = await response.json();
+                        setComplaints(data.complaints || []);
+                        setBackendStatus('connected');
+                    }
+                } catch (err) {
+                    console.error('Failed to load complaints history:', err);
+                    setBackendStatus('error');
+                }
+            };
+
+            const addLineItem = () => {
+                if (transaction.lineItems.length >= 50) {
+                    setMessage({ type: 'error', text: 'Maximum 50 line items reached' });
+                    return;
+                }
+
+                setTransaction(prev => ({
+                    ...prev,
+                    lineItems: [...prev.lineItems, {
+                        id: Date.now(),
+                        sku: '',
+                        description: '',
+                        quantity: '',
+                        location: '',
+                        photos: []
+                    }]
+                }));
+            };
+
+            const removeLineItem = (id) => {
+                setTransaction(prev => ({
+                    ...prev,
+                    lineItems: prev.lineItems.filter(item => item.id !== id)
+                }));
+            };
+
+            const updateLineItem = (id, field, value) => {
+                setTransaction(prev => ({
+                    ...prev,
+                    lineItems: prev.lineItems.map(item =>
+                        item.id === id ? { ...item, [field]: value } : item
+                    )
+                }));
+            };
+
+            // Water temp handlers
+            const generateTemp = () => {
+                const fahrenheit = Math.floor(Math.random() * 21) + 60; // 60-80°F
+                const celsius = Math.round((fahrenheit - 32) * 5 / 9);
+                setTempF(fahrenheit);
+                setTempC(celsius);
+                setMessage({ type: 'success', text: `Temperature: ${fahrenheit}°F (${celsius}°C)` });
+            };
+
+            const captureTempPhoto = async () => {
+                if (!isBridgeReady()) {
+                    setMessage({ type: 'error', text: 'Photo capture not available' });
+                    return;
+                }
+
+                try {
+                    setIsSubmitting(true);
+                    setMessage({ type: 'info', text: 'Opening camera...' });
+
+                    const photoResult = await window.shellBridge.capturePhoto('water-temp-' + Date.now());
+
+                    if (photoResult.data && photoResult.data.success) {
+                        setTempPhoto(photoResult.data);
+                        setMessage({ type: 'success', text: 'Photo captured' });
+                    } else {
+                        setMessage({ type: 'error', text: 'Photo capture failed' });
+                    }
+                } catch (err) {
+                    setMessage({ type: 'error', text: `Photo error: ${err.message}` });
+                } finally {
+                    setIsSubmitting(false);
+                }
+            };
+
+            const submitTempCheck = async () => {
+                if (!tempF || !tempPhoto) {
+                    setMessage({ type: 'error', text: 'Temperature and photo are required' });
+                    return;
+                }
+
+                try {
+                    setIsSubmitting(true);
+                    const url = 'http://192.168.0.163:3000/api/water-temp';
+
+                    const response = await fetch(url, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            id: 'wt-' + Date.now(),
+                            temp_fahrenheit: tempF,
+                            temp_celsius: tempC,
+                            location: tempLocation || null,
+                            photo_path: tempPhoto.photoPath,
+                            timestamp: Date.now()
+                        })
+                    });
+
+                    if (response.ok) {
+                        setMessage({ type: 'success', text: 'Temperature check saved!' });
+                        setTimeout(() => {
+                            setActiveView('menu');
+                            // Reset form
+                            setTempF(null);
+                            setTempC(null);
+                            setTempPhoto(null);
+                            setTempLocation('');
+                            setMessage(null);
+                        }, 2000);
+                    } else {
+                        setMessage({ type: 'error', text: 'Failed to save temperature check' });
+                    }
+                } catch (err) {
+                    setMessage({ type: 'error', text: `Error: ${err.message}` });
+                } finally {
+                    setIsSubmitting(false);
+                }
+            };
+
+            // Complaint handlers
+            const scanComplaintBarcode = async () => {
+                if (!isBridgeReady()) {
+                    setMessage({ type: 'error', text: 'Scanner not available' });
+                    return;
+                }
+
+                try {
+                    setIsSubmitting(true);
+                    setMessage({ type: 'info', text: 'Opening scanner...' });
+
+                    const scanResult = await window.shellBridge.scanBarcode();
+
+                    if (scanResult.data && scanResult.data.success) {
+                        const barcode = scanResult.data.barcode;
+                        setComplaintBarcode(barcode);
+                        setMessage({ type: 'info', text: `Barcode: ${barcode}. Looking up product...` });
+
+                        // Lookup product
+                        try {
+                            const product = await lookupProduct(barcode);
+                            setComplaintProduct(product);
+                            setMessage({ type: 'success', text: `Product found: ${product.name}` });
+                        } catch (err) {
+                            setComplaintProduct({ sku: barcode, name: 'Unknown Product' });
+                            setMessage({ type: 'error', text: `Product not found for barcode ${barcode}` });
+                        }
+                    } else {
+                        setMessage({ type: 'error', text: 'Scan failed' });
+                    }
+                } catch (err) {
+                    setMessage({ type: 'error', text: `Scanner error: ${err.message}` });
+                } finally {
+                    setIsSubmitting(false);
+                }
+            };
+
+            const captureComplaintPhoto = async () => {
+                if (!isBridgeReady()) {
+                    setMessage({ type: 'error', text: 'Photo capture not available' });
+                    return;
+                }
+
+                try {
+                    setIsSubmitting(true);
+                    setMessage({ type: 'info', text: 'Opening camera...' });
+
+                    const photoResult = await window.shellBridge.capturePhoto('complaint-' + Date.now());
+
+                    if (photoResult.data && photoResult.data.success) {
+                        setComplaintPhoto(photoResult.data);
+                        setMessage({ type: 'success', text: 'Photo captured' });
+                    } else {
+                        setMessage({ type: 'error', text: 'Photo capture failed' });
+                    }
+                } catch (err) {
+                    setMessage({ type: 'error', text: `Photo error: ${err.message}` });
+                } finally {
+                    setIsSubmitting(false);
+                }
+            };
+
+            const submitComplaint = async () => {
+                if (!complaintProduct || !complaintType || !complaintDescription) {
+                    setMessage({ type: 'error', text: 'Product, complaint type, and description are required' });
+                    return;
+                }
+
+                try {
+                    setIsSubmitting(true);
+                    const url = 'http://192.168.0.163:3000/api/complaints';
+
+                    const response = await fetch(url, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            id: 'comp-' + Date.now(),
+                            barcode: complaintBarcode,
+                            product_sku: complaintProduct.sku,
+                            product_name: complaintProduct.name,
+                            complaint_type: complaintType,
+                            description: complaintDescription,
+                            photo_path: complaintPhoto?.photoPath || null,
+                            timestamp: Date.now()
+                        })
+                    });
+
+                    if (response.ok) {
+                        setMessage({ type: 'success', text: 'Complaint registered!' });
+                        setTimeout(() => {
+                            setActiveView('menu');
+                            // Reset form
+                            setComplaintBarcode('');
+                            setComplaintProduct(null);
+                            setComplaintType('');
+                            setComplaintDescription('');
+                            setComplaintPhoto(null);
+                            setMessage(null);
+                        }, 2000);
+                    } else {
+                        setMessage({ type: 'error', text: 'Failed to register complaint' });
+                    }
+                } catch (err) {
+                    setMessage({ type: 'error', text: `Error: ${err.message}` });
+                } finally {
+                    setIsSubmitting(false);
+                }
+            };
+
+            const handleSubmit = async () => {
+                // Validation
+                if (!transaction.poNumber.trim()) {
+                    setMessage({ type: 'error', text: 'PO Number is required' });
+                    return;
+                }
+                if (!transaction.vendor.trim()) {
+                    setMessage({ type: 'error', text: 'Vendor is required' });
+                    return;
+                }
+                if (transaction.lineItems.length === 0) {
+                    setMessage({ type: 'error', text: 'At least one line item is required' });
+                    return;
+                }
+
+                // Validate line items
+                for (const item of transaction.lineItems) {
+                    if (!item.sku.trim() || !item.quantity || !item.location.trim()) {
+                        setMessage({ type: 'error', text: 'All line item fields are required' });
+                        return;
+                    }
+                }
+
+                setIsSubmitting(true);
+                setMessage(null);
+
+                try {
+                    // Prepare transaction data
+                    const transactionData = {
+                        transactionId: `TXN-${Date.now()}`,
+                        poNumber: transaction.poNumber.trim(),
+                        vendor: transaction.vendor.trim(),
+                        lineItems: transaction.lineItems.map(({ id, ...item }) => item),
+                        createdAt: Date.now()
+                    };
+
+                    // Submit via HTTP
+                    await submitTransaction(transactionData);
+
+                    // Success
+                    setMessage({
+                        type: 'success',
+                        text: `Transaction ${transaction.poNumber} submitted successfully`
+                    });
+
+                    // Reset form
+                    setTransaction({
+                        poNumber: '',
+                        vendor: '',
+                        lineItems: []
+                    });
+
+                    // Update status
+                    setBackendStatus('connected');
+
+                    // Reload history if on history tab
+                    if (activeTab === 'history') {
+                        setTimeout(loadHistory, 500);
+                    }
+
+                } catch (err) {
+                    console.error('Submit error:', err);
+                    setMessage({
+                        type: 'error',
+                        text: `Error: ${err.message}`
+                    });
+                    setBackendStatus('error');
+                } finally {
+                    setIsSubmitting(false);
+                }
+            };
+
+            // Menu view component
+            const MenuView = () => (
+                <div className="menu-container">
+                    <h2>Select Task</h2>
+                    <div className="menu-cards">
+                        <div className="menu-card" onClick={() => setActiveView('receiving')}>
+                            <div className="card-icon">📦</div>
+                            <h3>Receiving Orders</h3>
+                            <p>Create PO and receive items</p>
+                            <button>Open</button>
+                        </div>
+
+                        <div className="menu-card" onClick={() => setActiveView('waterTemp')}>
+                            <div className="card-icon">🌡️</div>
+                            <h3>Water Temp Check</h3>
+                            <p>Check and record temperature</p>
+                            <button>Open</button>
+                        </div>
+
+                        <div className="menu-card" onClick={() => setActiveView('complaints')}>
+                            <div className="card-icon">⚠️</div>
+                            <h3>Register Complaint</h3>
+                            <p>Scan barcode and report issue</p>
+                            <button>Open</button>
+                        </div>
+                    </div>
+
+                    <div style={{ marginTop: '40px', paddingTop: '20px', borderTop: '2px solid #e0e0e0' }}>
+                        <h3 style={{ marginBottom: '20px' }}>View History</h3>
+                        <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
+                            <button className="feature-btn primary" onClick={() => setActiveView('receivingHistory')}>
+                                📦 Receiving History
+                            </button>
+                            <button className="feature-btn primary" onClick={() => setActiveView('waterTempHistory')}>
+                                🌡️ Temp History
+                            </button>
+                            <button className="feature-btn primary" onClick={() => setActiveView('complaintsHistory')}>
+                                ⚠️ Complaints History
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            );
+
+            return (
+                <div className="warehouse-app">
+                    <div className="header">
+                        <h2>Warehouse Clerk Module</h2>
+                        <div className={`connection-status ${backendStatus}`}>
+                            {backendStatus === 'connected' && 'Connected to 192.168.0.163:3000'}
+                            {backendStatus === 'error' && 'Cannot reach backend'}
+                            {backendStatus === 'unknown' && 'Checking connection...'}
+                        </div>
+                    </div>
+
+                    {/* Menu View */}
+                    {activeView === 'menu' && <MenuView />}
+
+                    {/* Water Temperature Check View */}
+                    {activeView === 'waterTemp' && (
+                        <div className="form-section">
+                            <button className="back-btn" onClick={() => setActiveView('menu')}>← Back to Menu</button>
+                            <h3>Water Temperature Check</h3>
+
+                            <button
+                                className="feature-btn primary"
+                                onClick={generateTemp}
+                                disabled={isSubmitting}
+                            >
+                                🌡️ Check Temperature
+                            </button>
+
+                            {tempF && (
+                                <div className="temp-display">
+                                    <h3>{tempF}°F ({tempC}°C)</h3>
+                                    <p>Water Temperature Reading</p>
+                                </div>
+                            )}
+
+                            <div className="form-group">
+                                <label>Location (optional)</label>
+                                <input
+                                    type="text"
+                                    value={tempLocation}
+                                    onChange={(e) => setTempLocation(e.target.value)}
+                                    placeholder="Enter location"
+                                    disabled={isSubmitting}
+                                />
+                            </div>
+
+                            <button
+                                className="feature-btn primary"
+                                onClick={captureTempPhoto}
+                                disabled={isSubmitting || !tempF}
+                            >
+                                📸 Capture Photo
+                            </button>
+
+                            {tempPhoto && (
+                                <div className="photo-preview">
+                                    <img src={tempPhoto.thumbnailPath} alt="Temperature check" />
+                                </div>
+                            )}
+
+                            <button
+                                className="feature-btn success"
+                                onClick={submitTempCheck}
+                                disabled={isSubmitting || !tempF || !tempPhoto}
+                            >
+                                {isSubmitting ? 'Submitting...' : 'Submit Check'}
+                            </button>
+
+                            {message && (
+                                <div className={message.type}>
+                                    {message.text}
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    {/* Complaint Registration View */}
+                    {activeView === 'complaints' && (
+                        <div className="form-section">
+                            <button className="back-btn" onClick={() => setActiveView('menu')}>← Back to Menu</button>
+                            <h3>Register Complaint</h3>
+
+                            <button
+                                className="feature-btn primary"
+                                onClick={scanComplaintBarcode}
+                                disabled={isSubmitting}
+                            >
+                                📷 Scan Barcode
+                            </button>
+
+                            {complaintProduct && (
+                                <div className="product-info">
+                                    <p><strong>Barcode:</strong> {complaintBarcode}</p>
+                                    <p><strong>Product SKU:</strong> {complaintProduct.sku}</p>
+                                    <p><strong>Product Name:</strong> {complaintProduct.name}</p>
+                                </div>
+                            )}
+
+                            <div className="form-group">
+                                <label>Complaint Type *</label>
+                                <select
+                                    value={complaintType}
+                                    onChange={(e) => setComplaintType(e.target.value)}
+                                    disabled={isSubmitting || !complaintProduct}
+                                >
+                                    <option value="">Select Complaint Type</option>
+                                    <option value="damaged">Damaged</option>
+                                    <option value="defective">Defective</option>
+                                    <option value="wrong_item">Wrong Item</option>
+                                    <option value="missing_parts">Missing Parts</option>
+                                    <option value="quality_issue">Quality Issue</option>
+                                </select>
+                            </div>
+
+                            <div className="form-group">
+                                <label>Description *</label>
+                                <textarea
+                                    placeholder="Describe the issue in detail"
+                                    value={complaintDescription}
+                                    onChange={(e) => setComplaintDescription(e.target.value)}
+                                    disabled={isSubmitting || !complaintProduct}
+                                />
+                            </div>
+
+                            <button
+                                className="feature-btn primary"
+                                onClick={captureComplaintPhoto}
+                                disabled={isSubmitting || !complaintProduct}
+                            >
+                                📸 Capture Photo (Optional)
+                            </button>
+
+                            {complaintPhoto && (
+                                <div className="photo-preview">
+                                    <img src={complaintPhoto.thumbnailPath} alt="Complaint" />
+                                </div>
+                            )}
+
+                            <button
+                                className="feature-btn success"
+                                onClick={submitComplaint}
+                                disabled={isSubmitting || !complaintProduct || !complaintType || !complaintDescription}
+                            >
+                                {isSubmitting ? 'Submitting...' : 'Submit Complaint'}
+                            </button>
+
+                            {message && (
+                                <div className={message.type}>
+                                    {message.text}
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    {/* Receiving Orders View */}
+                    {activeView === 'receiving' && (
+                        <>
+                            <button className="back-btn" onClick={() => setActiveView('menu')}>← Back to Menu</button>
+
+                            <div className="tabs">
+                                <button
+                                    className={`tab-button ${activeTab === 'create' ? 'active' : ''}`}
+                                    onClick={() => setActiveTab('create')}
+                                >
+                                    Create Transaction
+                                </button>
+                                <button
+                                    className={`tab-button ${activeTab === 'history' ? 'active' : ''}`}
+                                    onClick={() => setActiveTab('history')}
+                                >
+                                    Transaction History ({submittedTransactions.length})
+                                </button>
+                            </div>
+                        </>
+                    )}
+
+                    {activeView === 'receiving' && activeTab === 'create' && (
+                        <div className="form-section">
+                            <h3>New Receiving Transaction</h3>
+
+                            <div className="form-group">
+                                <label>PO Number *</label>
+                                <input
+                                    type="text"
+                                    value={transaction.poNumber}
+                                    onChange={(e) => setTransaction(prev => ({ ...prev, poNumber: e.target.value }))}
+                                    placeholder="PO-20260318-001"
+                                />
+                            </div>
+
+                            <div className="form-group">
+                                <label>Vendor *</label>
+                                <input
+                                    type="text"
+                                    value={transaction.vendor}
+                                    onChange={(e) => setTransaction(prev => ({ ...prev, vendor: e.target.value }))}
+                                    placeholder="Acme Manufacturing Corp"
+                                />
+                            </div>
+
+                            <div className="line-items">
+                                <div className="line-items-header">
+                                    <h4>Line Items ({transaction.lineItems.length} / 50)</h4>
+                                </div>
+
+                                {transaction.lineItems.map(item => (
+                                    <div key={item.id} style={{ marginBottom: '16px' }}>
+                                        <div className="line-item">
+                                            <div className="input-with-scan">
+                                                <input
+                                                    type="text"
+                                                    value={item.sku}
+                                                    onChange={(e) => updateLineItem(item.id, 'sku', e.target.value)}
+                                                    placeholder="SKU"
+                                                />
+                                                <button
+                                                    className="scan-btn"
+                                                    onClick={() => handleBarcodeScan(item.id, setMessage, transaction, setTransaction, setIsSubmitting)}
+                                                    disabled={isSubmitting}
+                                                    title="Scan barcode"
+                                                >
+                                                    📷
+                                                </button>
+                                                <button
+                                                    className="photo-btn"
+                                                    onClick={() => handlePhotoCapture(item.id, setMessage, transaction, setTransaction, setIsSubmitting)}
+                                                    disabled={isSubmitting || (item.photos && item.photos.length >= 5)}
+                                                    title="Capture photo"
+                                                >
+                                                    📸
+                                                </button>
+                                            </div>
+                                            <input
+                                                type="text"
+                                                value={item.description}
+                                                onChange={(e) => updateLineItem(item.id, 'description', e.target.value)}
+                                                placeholder="Description"
+                                            />
+                                            <input
+                                                type="number"
+                                                value={item.quantity}
+                                                onChange={(e) => updateLineItem(item.id, 'quantity', e.target.value)}
+                                                placeholder="Qty"
+                                            />
+                                            <div className="input-with-scan">
+                                                <input
+                                                    type="text"
+                                                    value={item.location}
+                                                    onChange={(e) => updateLineItem(item.id, 'location', e.target.value)}
+                                                    placeholder="Location"
+                                                />
+                                                <button
+                                                    className="scan-btn"
+                                                    onClick={() => handleQRScan(item.id, setMessage, transaction, setTransaction, setIsSubmitting)}
+                                                    disabled={isSubmitting}
+                                                    title="Scan QR code"
+                                                >
+                                                    📱
+                                                </button>
+                                            </div>
+                                            <button
+                                                className="remove-btn"
+                                                onClick={() => removeLineItem(item.id)}
+                                            >
+                                                ×
+                                            </button>
+                                        </div>
+                                        {item.photos && item.photos.length > 0 && (
+                                            <div className="photo-gallery">
+                                                {item.photos.map((photo, idx) => (
+                                                    <div key={idx} className="photo-thumbnail">
+                                                        <img
+                                                            src={photo.thumbnailPath}
+                                                            alt={`Photo ${idx + 1}`}
+                                                            onClick={() => showPhotoModal(photo.path)}
+                                                        />
+                                                        <button
+                                                            className="photo-delete-btn"
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                handlePhotoDelete(item.id, idx, setMessage, transaction, setTransaction);
+                                                            }}
+                                                            title="Delete photo"
+                                                        >
+                                                            🗑️
+                                                        </button>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
+                                ))}
+
+                                <button
+                                    className="add-btn"
+                                    onClick={addLineItem}
+                                    disabled={transaction.lineItems.length >= 50}
+                                >
+                                    + Add Line Item
+                                </button>
+
+                                {transaction.lineItems.length >= 50 && (
+                                    <div className="error">Maximum 50 line items reached</div>
+                                )}
+                            </div>
+
+                            <button
+                                className="submit-btn"
+                                onClick={handleSubmit}
+                                disabled={isSubmitting || transaction.lineItems.length === 0}
+                            >
+                                {isSubmitting ? 'Submitting...' : 'Submit Transaction'}
+                            </button>
+
+                            {message && (
+                                <div className={message.type}>
+                                    {message.text}
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    {(activeView === 'receiving' && activeTab === 'history') || activeView === 'receivingHistory' ? (
+                        <div className="form-section">
+                            {activeView === 'receivingHistory' && (
+                                <button className="back-btn" onClick={() => setActiveView('menu')}>← Back to Menu</button>
+                            )}
+                            <h3>Receiving Transaction History</h3>
+
+                            {isLoadingHistory && submittedTransactions.length === 0 ? (
+                                <div className="loading">Loading transactions...</div>
+                            ) : submittedTransactions.length === 0 ? (
+                                <div className="empty-state">
+                                    <p>No transactions submitted yet</p>
+                                    <p style={{ fontSize: '14px', marginTop: '8px' }}>
+                                        Submit a transaction from the Create tab to see it here
+                                    </p>
+                                </div>
+                            ) : (
+                                <div className="transaction-history">
+                                    {submittedTransactions.map(tx => (
+                                        <div key={tx.transactionId || tx.transaction_id} className="history-item">
+                                            <div className="history-item-header">
+                                                <strong>PO: {tx.poNumber || tx.po_number}</strong>
+                                                <span style={{ fontSize: '12px', color: '#999' }}>
+                                                    {formatTimestamp(tx.createdAt || tx.created_at)}
+                                                </span>
+                                            </div>
+                                            <div className="history-item-details">
+                                                <div><strong>Transaction ID:</strong> {tx.transactionId || tx.transaction_id}</div>
+                                                <div><strong>Vendor:</strong> {tx.vendor}</div>
+                                                <div><strong>Line Items:</strong> {tx.lineItems?.length || 0} item(s)</div>
+                                                {tx.lineItems && tx.lineItems.length > 0 && (
+                                                    <div style={{ marginTop: '8px', fontSize: '13px', color: '#666' }}>
+                                                        {tx.lineItems.map((item, idx) => (
+                                                            <div key={idx}>
+                                                                <div style={{ marginLeft: '16px', marginBottom: '4px' }}>
+                                                                    • {item.sku}: {item.description || 'N/A'} (Qty: {item.quantity}, Loc: {item.location})
+                                                                </div>
+                                                                {item.photos && item.photos.length > 0 && (
+                                                                    <div className="photo-gallery" style={{ marginLeft: '32px', marginTop: '8px' }}>
+                                                                        {item.photos.map((photo, photoIdx) => (
+                                                                            <div key={photoIdx} className="photo-thumbnail">
+                                                                                <img
+                                                                                    src={photo.thumbnailPath || photo.path}
+                                                                                    alt={`Photo ${photoIdx + 1}`}
+                                                                                    onClick={() => showPhotoModal(photo.path)}
+                                                                                />
+                                                                            </div>
+                                                                        ))}
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+
+                            <div className="refresh-info">Auto-refresh enabled</div>
+                        </div>
+                    ) : null}
+
+                    {/* Water Temp History View */}
+                    {activeView === 'waterTempHistory' && (
+                        <div className="form-section">
+                            <button className="back-btn" onClick={() => setActiveView('menu')}>← Back to Menu</button>
+                            <h3>Water Temperature History</h3>
+
+                            {waterTempChecks.length === 0 ? (
+                                <div className="empty-state">
+                                    <p>No temperature checks recorded yet</p>
+                                </div>
+                            ) : (
+                                <div className="transaction-history">
+                                    {waterTempChecks.map(check => (
+                                        <div key={check.id} className="history-item">
+                                            <div className="history-item-header">
+                                                <strong>Water Temperature: {check.temp_fahrenheit}°F ({check.temp_celsius}°C)</strong>
+                                                <span style={{ fontSize: '12px', color: '#999' }}>
+                                                    {formatTimestamp(check.created_at)}
+                                                </span>
+                                            </div>
+                                            <div className="history-item-details">
+                                                <div><strong>Location:</strong> {check.location || 'Not specified'}</div>
+                                                <div><strong>Check ID:</strong> {check.id}</div>
+                                                {check.photo_path && (
+                                                    <div className="photo-gallery" style={{ marginTop: '12px' }}>
+                                                        <div className="photo-thumbnail">
+                                                            <img
+                                                                src={check.photo_path}
+                                                                alt="Temperature check"
+                                                                onClick={() => showPhotoModal(check.photo_path)}
+                                                            />
+                                                        </div>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+
+                            <div className="refresh-info">Auto-refresh enabled</div>
+                        </div>
+                    )}
+
+                    {/* Complaints History View */}
+                    {activeView === 'complaintsHistory' && (
+                        <div className="form-section">
+                            <button className="back-btn" onClick={() => setActiveView('menu')}>← Back to Menu</button>
+                            <h3>Complaints History</h3>
+
+                            {complaints.length === 0 ? (
+                                <div className="empty-state">
+                                    <p>No complaints registered yet</p>
+                                </div>
+                            ) : (
+                                <div className="transaction-history">
+                                    {complaints.map(complaint => (
+                                        <div key={complaint.id} className="history-item">
+                                            <div className="history-item-header">
+                                                <strong>{complaint.complaint_type.replace('_', ' ').toUpperCase()}</strong>
+                                                <span style={{ fontSize: '12px', color: '#999' }}>
+                                                    {formatTimestamp(complaint.created_at)}
+                                                </span>
+                                            </div>
+                                            <div className="history-item-details">
+                                                <div><strong>Barcode:</strong> {complaint.barcode}</div>
+                                                <div><strong>Product:</strong> {complaint.product_name || 'Unknown'} ({complaint.product_sku || 'N/A'})</div>
+                                                <div><strong>Description:</strong> {complaint.description}</div>
+                                                <div><strong>Status:</strong> <span style={{
+                                                    color: complaint.status === 'open' ? '#ff9800' : '#4caf50',
+                                                    fontWeight: '500'
+                                                }}>{complaint.status}</span></div>
+                                                <div><strong>Complaint ID:</strong> {complaint.id}</div>
+                                                {complaint.photo_path && (
+                                                    <div className="photo-gallery" style={{ marginTop: '12px' }}>
+                                                        <div className="photo-thumbnail">
+                                                            <img
+                                                                src={complaint.photo_path}
+                                                                alt="Complaint"
+                                                                onClick={() => showPhotoModal(complaint.photo_path)}
+                                                            />
+                                                        </div>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+
+                            <div className="refresh-info">Auto-refresh enabled</div>
+                        </div>
+                    )}
+
+                    {/* Phase 5.1: Photo modal */}
+                    <div id="photo-modal" className="photo-modal" onClick={closePhotoModal}>
+                        <div className="photo-modal-content" onClick={(e) => e.stopPropagation()}>
+                            <button className="photo-modal-close" onClick={closePhotoModal}>×</button>
+                            <img id="modal-photo" src="" alt="Full size photo" />
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        // Render the app
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<WarehouseApp />);
+
+        console.log('[Warehouse Module] React app mounted - Direct HTTP mode');
+        console.log('[Backend URL]', 'http://192.168.0.163:3000');
+    </script>
+</body>
+</html>

@@ -23,6 +23,8 @@
 | 1 | tester | 2 | 8,631 | 18,454 | claude-sonnet-4-5 | $0.30 |
 | 1 | feedback | 3 | 13,286 | 24,137 | claude-sonnet-4-5 | $0.40 |
 | 1 | reviewer | 3 | 8,711 | 13,320 | claude-sonnet-4-5 | $0.23 |
+| 3 | planner | 0 | 12,450 | 6,200 | claude-sonnet-4-6 | $0.13 |
+| 3 | validator | 1 | 8,500 | 9,800 | claude-sonnet-4-6 | $0.17 |
 
 ---
 
