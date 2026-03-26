@@ -7,6 +7,9 @@
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <!-- Dexie for offline storage (simpler than RxDB for browser use) -->
+    <script src="https://cdn.jsdelivr.net/npm/dexie@3.2.4/dist/dexie.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/uuid@9.0.0/dist/umd/uuidv4.min.js"></script>
     <style>
         * {
             margin: 0;
@@ -551,7 +554,623 @@
     <div id="root"></div>
 
     <script type="text/babel">
-        const { useState, useEffect } = React;
+        const { useState, useEffect, useRef } = React;
+
+        // ============================================================
+        // PHASE 4: OFFLINE DATABASE & SYNC INFRASTRUCTURE
+        // ============================================================
+
+        // Database singleton
+        let offlineDB = null;
+        let syncManager = null;
+
+        // Transaction schema (legacy - kept for reference, Dexie uses inline schema)
+        const transactionSchema = {
+            title: 'Receiving Transaction Schema',
+            version: 0,
+            primaryKey: 'transactionId',
+            type: 'object',
+            properties: {
+                transactionId: { type: 'string', maxLength: 100 },
+                poNumber: { type: 'string', maxLength: 50 },
+                vendor: { type: 'string', maxLength: 100 },
+                lineItems: { type: 'array' },
+                createdAt: { type: 'number', minimum: 0 },
+                syncStatus: {
+                    type: 'string',
+                    enum: ['pending', 'syncing', 'synced', 'failed'],
+                    default: 'pending'
+                },
+                retryCount: { type: 'number', minimum: 0, maximum: 10, default: 0 },
+                lastError: { type: ['string', 'null'], default: null },
+                lastSyncAttempt: { type: ['number', 'null'], default: null }
+            },
+            required: ['transactionId', 'poNumber', 'vendor', 'lineItems', 'createdAt', 'syncStatus'],
+            indexes: ['syncStatus', 'createdAt']
+        };
+
+        // Initialize offline database
+        async function initOfflineDatabase() {
+            if (offlineDB) {
+                return offlineDB;
+            }
+
+            console.log('[OfflineDB] Initializing database...');
+
+            try {
+                // Request persistent storage
+                if (navigator.storage && navigator.storage.persist) {
+                    const isPersisted = await navigator.storage.persisted();
+                    console.log('[OfflineDB] Storage persisted:', isPersisted);
+                    if (!isPersisted) {
+                        const granted = await navigator.storage.persist();
+                        console.log('[OfflineDB] Persistence granted:', granted);
+                    }
+                }
+
+                // Create Dexie database
+                offlineDB = new Dexie('warehouse_offline_db');
+
+                // Version 3: Old schema (kept for migration)
+                offlineDB.version(3).stores({
+                    transactions: '&transactionId, syncStatus, createdAt, poNumber',
+                    waterChecks: '&id, syncStatus, createdAt, product',
+                    complaints: '&id, syncStatus, createdAt, product'
+                });
+
+                // Version 4: Fix collection name from waterChecks to waterchecks
+                offlineDB.version(4).stores({
+                    transactions: '&transactionId, syncStatus, createdAt, poNumber',
+                    waterchecks: '&id, syncStatus, createdAt, product',
+                    complaints: '&id, syncStatus, createdAt, product',
+                    waterChecks: null  // Delete old collection
+                }).upgrade(async tx => {
+                    console.log('[OfflineDB] Upgrading to v4: migrating waterChecks to waterchecks');
+                    try {
+                        // Migrate data from old waterChecks to new waterchecks
+                        const oldData = await tx.table('waterChecks').toArray();
+                        console.log(`[OfflineDB] Migrating ${oldData.length} water checks`);
+                        if (oldData.length > 0) {
+                            await tx.table('waterchecks').bulkAdd(oldData);
+                        }
+                        console.log('[OfflineDB] Migration complete');
+                    } catch (error) {
+                        console.error('[OfflineDB] Migration error:', error);
+                    }
+                });
+
+                console.log('[OfflineDB] Database created');
+                await offlineDB.open();
+                console.log('[OfflineDB] ✅ Database ready (transactions, waterchecks, complaints)');
+
+                return offlineDB;
+
+            } catch (error) {
+                console.error('[OfflineDB] Initialization failed:', error);
+                throw error;
+            }
+        }
+
+        // Simple SyncManager class
+        class SimpleSyncManager {
+            constructor(database) {
+                this.db = database;
+                this.isOnline = navigator.onLine;
+                this.isSyncing = false;
+                this.listeners = [];
+
+                window.addEventListener('online', () => this.handleOnline());
+                window.addEventListener('offline', () => this.handleOffline());
+
+                // Flutter connectivity bridge
+                window.onConnectivityChange = (event) => this.handleConnectivityChange(event);
+
+                console.log('[SyncManager] Initialized. Online:', this.isOnline);
+            }
+
+            handleOnline() {
+                console.log('[SyncManager] ONLINE');
+                this.isOnline = true;
+                this.notifyListeners({ online: true });
+
+                // Upload pending first (higher priority)
+                this.syncPendingTransactions();
+                this.syncPendingWaterChecks();
+                this.syncPendingComplaints();
+
+                // Then download updates (lower priority)
+                setTimeout(() => {
+                    this.downloadAllData();
+                }, 2000); // Wait 2 seconds for uploads to finish
+            }
+
+            handleOffline() {
+                console.log('[SyncManager] OFFLINE');
+                this.isOnline = false;
+                this.notifyListeners({ online: false });
+            }
+
+            handleConnectivityChange(event) {
+                console.log('[SyncManager] Connectivity change:', event);
+                const wasOnline = this.isOnline;
+                this.isOnline = event.online;
+                this.notifyListeners({ online: event.online });
+
+                if (!wasOnline && this.isOnline) {
+                    // Upload pending
+                    this.syncPendingTransactions();
+                    this.syncPendingWaterChecks();
+                    this.syncPendingComplaints();
+
+                    // Download updates
+                    setTimeout(() => {
+                        this.downloadAllData();
+                    }, 2000);
+                }
+            }
+
+            addListener(callback) {
+                this.listeners.push(callback);
+            }
+
+            removeListener(callback) {
+                this.listeners = this.listeners.filter(cb => cb !== callback);
+            }
+
+            notifyListeners(event) {
+                this.listeners.forEach(cb => cb(event));
+            }
+
+            async syncPendingTransactions() {
+                if (!this.isOnline || this.isSyncing) {
+                    return;
+                }
+
+                this.isSyncing = true;
+                console.log('[SyncManager] Starting sync...');
+
+                try {
+                    const pending = await this.db.transactions
+                        .where('syncStatus')
+                        .anyOf(['pending', 'failed'])
+                        .sortBy('createdAt');
+
+                    console.log(`[SyncManager] Found ${pending.length} pending transactions`);
+
+                    for (const tx of pending) {
+                        await this.syncTransaction(tx);
+                        await this.delay(2000); // 2-second delay for visibility
+                        if (!this.isOnline) break;
+                    }
+
+                    console.log('[SyncManager] Sync complete');
+                } catch (error) {
+                    console.error('[SyncManager] Sync error:', error);
+                } finally {
+                    this.isSyncing = false;
+                }
+            }
+
+            async syncTransaction(txData) {
+                console.log(`[SyncManager] Syncing ${txData.transactionId}...`);
+
+                try {
+                    // Update status to syncing
+                    await this.db.transactions.update(txData.transactionId, {
+                        syncStatus: 'syncing',
+                        lastSyncAttempt: Date.now()
+                    });
+
+                    const response = await fetch('http://192.168.0.163:3000/api/transactions', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(txData)
+                    });
+
+                    if (response.ok) {
+                        // Mark as synced
+                        await this.db.transactions.update(txData.transactionId, {
+                            syncStatus: 'synced',
+                            retryCount: 0,
+                            lastError: null,
+                            lastSyncAttempt: Date.now()
+                        });
+                        console.log(`[SyncManager] ✓ ${txData.transactionId} synced`);
+                    } else {
+                        throw new Error(`HTTP ${response.status}`);
+                    }
+                } catch (error) {
+                    console.error(`[SyncManager] ✗ ${txData.transactionId} failed:`, error);
+                    const retryCount = (txData.retryCount || 0) + 1;
+                    const newStatus = retryCount >= 3 ? 'failed' : 'pending';
+                    await this.db.transactions.update(txData.transactionId, {
+                        syncStatus: newStatus,
+                        retryCount,
+                        lastError: error.message,
+                        lastSyncAttempt: Date.now()
+                    });
+                }
+            }
+
+            delay(ms) {
+                return new Promise(resolve => setTimeout(resolve, ms));
+            }
+
+            async getSyncStatus() {
+                try {
+                    // Query all three tables for sync status
+                    const txPending = await this.db.transactions.where('syncStatus').equals('pending').toArray();
+                    const txSyncing = await this.db.transactions.where('syncStatus').equals('syncing').toArray();
+                    const txFailed = await this.db.transactions.where('syncStatus').equals('failed').toArray();
+                    const txSynced = await this.db.transactions.where('syncStatus').equals('synced').toArray();
+
+                    const wcPending = await this.db.waterchecks.where('syncStatus').equals('pending').toArray();
+                    const wcSyncing = await this.db.waterchecks.where('syncStatus').equals('syncing').toArray();
+                    const wcFailed = await this.db.waterchecks.where('syncStatus').equals('failed').toArray();
+                    const wcSynced = await this.db.waterchecks.where('syncStatus').equals('synced').toArray();
+
+                    const coPending = await this.db.complaints.where('syncStatus').equals('pending').toArray();
+                    const coSyncing = await this.db.complaints.where('syncStatus').equals('syncing').toArray();
+                    const coFailed = await this.db.complaints.where('syncStatus').equals('failed').toArray();
+                    const coSynced = await this.db.complaints.where('syncStatus').equals('synced').toArray();
+
+                    return {
+                        // Total counts across all types
+                        pending: txPending.length + wcPending.length + coPending.length,
+                        syncing: txSyncing.length + wcSyncing.length + coSyncing.length,
+                        failed: txFailed.length + wcFailed.length + coFailed.length,
+                        synced: txSynced.length + wcSynced.length + coSynced.length,
+
+                        // Per-type breakdowns
+                        transactions: {
+                            pending: txPending.length,
+                            syncing: txSyncing.length,
+                            failed: txFailed.length,
+                            synced: txSynced.length
+                        },
+                        waterchecks: {
+                            pending: wcPending.length,
+                            syncing: wcSyncing.length,
+                            failed: wcFailed.length,
+                            synced: wcSynced.length
+                        },
+                        complaints: {
+                            pending: coPending.length,
+                            syncing: coSyncing.length,
+                            failed: coFailed.length,
+                            synced: coSynced.length
+                        },
+
+                        isOnline: this.isOnline,
+                        isSyncing: this.isSyncing
+                    };
+                } catch (error) {
+                    console.error('[SyncManager] Error getting sync status:', error);
+                    return null;
+                }
+            }
+
+            // ========== WATER CHECK SYNC ==========
+            async syncPendingWaterChecks() {
+                if (!this.isOnline || this.isSyncing) {
+                    return;
+                }
+
+                try {
+                    const pending = await this.db.waterchecks
+                        .where('syncStatus')
+                        .anyOf(['pending', 'failed'])
+                        .sortBy('createdAt');
+
+                    console.log(`[SyncManager] Found ${pending.length} pending water checks`);
+
+                    for (const check of pending) {
+                        await this.syncWaterCheck(check);
+                        await this.delay(1000);
+                        if (!this.isOnline) break;
+                    }
+                } catch (error) {
+                    console.error('[SyncManager] Water check sync error:', error);
+                }
+            }
+
+            async syncWaterCheck(checkData) {
+                console.log(`[SyncManager] Syncing water check ${checkData.id}...`);
+
+                try {
+                    await this.db.waterchecks.update(checkData.id, {
+                        syncStatus: 'syncing',
+                        lastSyncAttempt: Date.now()
+                    });
+
+                    const response = await fetch('http://192.168.0.163:3000/api/water-temp', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(checkData)
+                    });
+
+                    if (response.ok) {
+                        await this.db.waterchecks.update(checkData.id, {
+                            syncStatus: 'synced',
+                            retryCount: 0,
+                            lastError: null,
+                            lastSyncAttempt: Date.now()
+                        });
+                        console.log(`[SyncManager] ✓ Water check ${checkData.id} synced`);
+                    } else {
+                        throw new Error(`HTTP ${response.status}`);
+                    }
+                } catch (error) {
+                    console.error(`[SyncManager] ✗ Water check ${checkData.id} failed:`, error);
+                    const retryCount = (checkData.retryCount || 0) + 1;
+                    const newStatus = retryCount >= 3 ? 'failed' : 'pending';
+                    await this.db.waterchecks.update(checkData.id, {
+                        syncStatus: newStatus,
+                        retryCount,
+                        lastError: error.message,
+                        lastSyncAttempt: Date.now()
+                    });
+                }
+            }
+
+            // ========== COMPLAINT SYNC ==========
+            async syncPendingComplaints() {
+                if (!this.isOnline || this.isSyncing) {
+                    return;
+                }
+
+                try {
+                    const pending = await this.db.complaints
+                        .where('syncStatus')
+                        .anyOf(['pending', 'failed'])
+                        .sortBy('createdAt');
+
+                    console.log(`[SyncManager] Found ${pending.length} pending complaints`);
+
+                    for (const complaint of pending) {
+                        await this.syncComplaint(complaint);
+                        await this.delay(1000);
+                        if (!this.isOnline) break;
+                    }
+                } catch (error) {
+                    console.error('[SyncManager] Complaint sync error:', error);
+                }
+            }
+
+            async syncComplaint(complaintData) {
+                console.log(`[SyncManager] Syncing complaint ${complaintData.id}...`);
+
+                try {
+                    await this.db.complaints.update(complaintData.id, {
+                        syncStatus: 'syncing',
+                        lastSyncAttempt: Date.now()
+                    });
+
+                    const response = await fetch('http://192.168.0.163:3000/api/complaints', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(complaintData)
+                    });
+
+                    if (response.ok) {
+                        await this.db.complaints.update(complaintData.id, {
+                            syncStatus: 'synced',
+                            retryCount: 0,
+                            lastError: null,
+                            lastSyncAttempt: Date.now()
+                        });
+                        console.log(`[SyncManager] ✓ Complaint ${complaintData.id} synced`);
+                    } else {
+                        throw new Error(`HTTP ${response.status}`);
+                    }
+                } catch (error) {
+                    console.error(`[SyncManager] ✗ Complaint ${complaintData.id} failed:`, error);
+                    const retryCount = (complaintData.retryCount || 0) + 1;
+                    const newStatus = retryCount >= 3 ? 'failed' : 'pending';
+                    await this.db.complaints.update(complaintData.id, {
+                        syncStatus: newStatus,
+                        retryCount,
+                        lastError: error.message,
+                        lastSyncAttempt: Date.now()
+                    });
+                }
+            }
+
+            // ========== DOWNLOAD SYNC METHODS (Backend → IndexedDB) ==========
+
+            async downloadAllData() {
+                if (!this.isOnline || this.isSyncing) {
+                    console.log('[SyncManager] Skipping download - offline or already syncing');
+                    return;
+                }
+
+                console.log('[SyncManager] 📥 Starting download sync...');
+
+                try {
+                    this.isSyncing = true;
+
+                    await this.downloadTransactions();
+                    await this.downloadWaterChecks();
+                    await this.downloadComplaints();
+
+                    console.log('[SyncManager] ✅ Download sync complete');
+                } catch (error) {
+                    console.error('[SyncManager] Download sync error:', error);
+                } finally {
+                    this.isSyncing = false;
+                }
+            }
+
+            async downloadTransactions() {
+                try {
+                    // Get last sync timestamp from localStorage
+                    const lastSync = localStorage.getItem('lastTransactionSync') || 0;
+
+                    console.log(`[SyncManager] Downloading transactions since ${new Date(parseInt(lastSync)).toLocaleString()}`);
+
+                    const response = await fetch(
+                        `http://192.168.0.163:3000/api/transactions?since=${lastSync}&limit=100`,
+                        {
+                            method: 'GET',
+                            headers: { 'Accept': 'application/json' }
+                        }
+                    );
+
+                    if (!response.ok) {
+                        throw new Error(`HTTP ${response.status}`);
+                    }
+
+                    const data = await response.json();
+                    const transactions = data.transactions || [];
+
+                    console.log(`[SyncManager] Downloaded ${transactions.length} transactions from backend`);
+
+                    // Upsert into IndexedDB (put = insert or update)
+                    let inserted = 0;
+                    for (const tx of transactions) {
+                        // Only store if it's not a pending local transaction
+                        const existing = await this.db.transactions.get(tx.transactionId);
+
+                        if (!existing || existing.syncStatus === 'synced') {
+                            // Add syncStatus if not present
+                            const txData = {
+                                ...tx,
+                                syncStatus: 'synced',
+                                createdAt: tx.created_at ? new Date(tx.created_at).getTime() : Date.now()
+                            };
+
+                            await this.db.transactions.put(txData);
+                            inserted++;
+                        }
+                    }
+
+                    // Update last sync timestamp
+                    localStorage.setItem('lastTransactionSync', Date.now().toString());
+
+                    console.log(`[SyncManager] ✅ Stored ${inserted} transactions in IndexedDB`);
+
+                } catch (error) {
+                    console.error('[SyncManager] Transaction download error:', error);
+                }
+            }
+
+            async downloadWaterChecks() {
+                try {
+                    const lastSync = localStorage.getItem('lastWaterCheckSync') || 0;
+
+                    console.log(`[SyncManager] Downloading water checks since ${new Date(parseInt(lastSync)).toLocaleString()}`);
+
+                    const response = await fetch(
+                        `http://192.168.0.163:3000/api/water-checks?since=${lastSync}&limit=100`,
+                        {
+                            method: 'GET',
+                            headers: { 'Accept': 'application/json' }
+                        }
+                    );
+
+                    if (!response.ok) {
+                        throw new Error(`HTTP ${response.status}`);
+                    }
+
+                    const data = await response.json();
+                    const checks = data.waterchecks || data.checks || [];
+
+                    console.log(`[SyncManager] Downloaded ${checks.length} water checks from backend`);
+
+                    let inserted = 0;
+                    for (const check of checks) {
+                        const existing = await this.db.waterchecks.get(check.id);
+
+                        if (!existing || existing.syncStatus === 'synced') {
+                            const checkData = {
+                                ...check,
+                                syncStatus: 'synced',
+                                createdAt: check.timestamp || Date.now()
+                            };
+
+                            await this.db.waterchecks.put(checkData);
+                            inserted++;
+                        }
+                    }
+
+                    localStorage.setItem('lastWaterCheckSync', Date.now().toString());
+
+                    console.log(`[SyncManager] ✅ Stored ${inserted} water checks in IndexedDB`);
+
+                } catch (error) {
+                    console.error('[SyncManager] Water check download error:', error);
+                }
+            }
+
+            async downloadComplaints() {
+                try {
+                    const lastSync = localStorage.getItem('lastComplaintSync') || 0;
+
+                    console.log(`[SyncManager] Downloading complaints since ${new Date(parseInt(lastSync)).toLocaleString()}`);
+
+                    const response = await fetch(
+                        `http://192.168.0.163:3000/api/complaints?since=${lastSync}&limit=100`,
+                        {
+                            method: 'GET',
+                            headers: { 'Accept': 'application/json' }
+                        }
+                    );
+
+                    if (!response.ok) {
+                        throw new Error(`HTTP ${response.status}`);
+                    }
+
+                    const data = await response.json();
+                    const complaints = data.complaints || [];
+
+                    console.log(`[SyncManager] Downloaded ${complaints.length} complaints from backend`);
+
+                    let inserted = 0;
+                    for (const complaint of complaints) {
+                        const existing = await this.db.complaints.get(complaint.id);
+
+                        if (!existing || existing.syncStatus === 'synced') {
+                            const complaintData = {
+                                ...complaint,
+                                syncStatus: 'synced',
+                                createdAt: complaint.timestamp || Date.now()
+                            };
+
+                            await this.db.complaints.put(complaintData);
+                            inserted++;
+                        }
+                    }
+
+                    localStorage.setItem('lastComplaintSync', Date.now().toString());
+
+                    console.log(`[SyncManager] ✅ Stored ${inserted} complaints in IndexedDB`);
+
+                } catch (error) {
+                    console.error('[SyncManager] Complaint download error:', error);
+                }
+            }
+
+            async refreshFromBackend() {
+                console.log('[SyncManager] 🔄 Manual refresh triggered');
+
+                if (!this.isOnline) {
+                    console.log('[SyncManager] Cannot refresh - offline');
+                    return { success: false, error: 'Offline' };
+                }
+
+                try {
+                    await this.downloadAllData();
+                    return { success: true };
+                } catch (error) {
+                    console.error('[SyncManager] Refresh error:', error);
+                    return { success: false, error: error.message };
+                }
+            }
+        }
+
+        // ============================================================
+        // END OFFLINE INFRASTRUCTURE
+        // ============================================================
 
         // Check if bridge is ready
         function isBridgeReady() {
@@ -852,24 +1471,37 @@
 
         // Direct HTTP GET with detailed logging
         async function loadTransactionHistory() {
-            const url = 'http://192.168.0.163:3000/api/transactions';
+            // ✅ READ FROM LOCAL DB (Single Source of Truth)
+            console.log('[LocalDB] Loading transaction history from IndexedDB...');
 
-            console.log('[HTTP] Loading history from:', url);
-
-            const response = await fetch(url, {
-                method: 'GET',
-                headers: {
-                    'Accept': 'application/json',
-                },
-            });
-
-            if (!response.ok) {
-                throw new Error(`HTTP ${response.status}`);
+            if (!offlineDB) {
+                console.warn('[LocalDB] Database not ready');
+                return [];
             }
 
-            const data = await response.json();
-            console.log('[HTTP] History loaded:', data.transactions?.length || 0, 'transactions');
-            return data.transactions || [];
+            try {
+                // Always read from IndexedDB (works offline!)
+                const transactions = await offlineDB.transactions
+                    .orderBy('createdAt')
+                    .reverse()
+                    .limit(100)
+                    .toArray();
+
+                console.log('[LocalDB] ✅ Loaded', transactions.length, 'transactions from IndexedDB');
+
+                // Background refresh if online (don't await - non-blocking)
+                if (navigator.onLine && syncManagerRef && syncManagerRef.current) {
+                    syncManagerRef.current.downloadTransactions().catch(err => {
+                        console.warn('[LocalDB] Background sync failed:', err);
+                    });
+                }
+
+                return transactions;
+
+            } catch (error) {
+                console.error('[LocalDB] Failed to load from IndexedDB:', error);
+                return [];
+            }
         }
 
         // Format timestamp for display
@@ -886,7 +1518,7 @@
         }
 
         function WarehouseApp() {
-            const [activeView, setActiveView] = useState('menu'); // menu, receiving, waterTemp, complaints, receivingHistory, waterTempHistory, complaintsHistory
+            const [activeView, setActiveView] = useState('menu'); // menu, receiving, waterTemp, complaints, receivingHistory, waterTempHistory, complaintsHistory, offlineQueue
             const [activeTab, setActiveTab] = useState('create');
             const [backendStatus, setBackendStatus] = useState('unknown');
             const [transaction, setTransaction] = useState({
@@ -901,6 +1533,14 @@
             const [isLoadingHistory, setIsLoadingHistory] = useState(false);
             const [message, setMessage] = useState(null);
 
+            // Offline database state
+            const [dbReady, setDbReady] = useState(false);
+            const [dbError, setDbError] = useState(null);
+            const [networkOnline, setNetworkOnline] = useState(navigator.onLine);
+            const [pendingTransactions, setPendingTransactions] = useState([]);
+            const [syncStatus, setSyncStatus] = useState(null);
+            const syncManagerRef = useRef(null);
+
             // Water temp state
             const [tempF, setTempF] = useState(null);
             const [tempC, setTempC] = useState(null);
@@ -913,6 +1553,48 @@
             const [complaintType, setComplaintType] = useState('');
             const [complaintDescription, setComplaintDescription] = useState('');
             const [complaintPhoto, setComplaintPhoto] = useState(null);
+
+            // Initialize offline database
+            useEffect(() => {
+                async function setupOfflineDB() {
+                    try {
+                        console.log('[App] Initializing offline database...');
+                        const db = await initOfflineDatabase();
+                        setDbReady(true);
+                        setDbError(null);
+
+                        // Initialize sync manager
+                        syncManagerRef.current = new SimpleSyncManager(db);
+                        syncManagerRef.current.addListener((event) => {
+                            setNetworkOnline(event.online);
+                            updateSyncStatus();
+                        });
+
+                        // Load pending transactions
+                        loadPendingTransactions();
+
+                        // ✅ LOAD ALL HISTORIES FROM LOCAL DB ON STARTUP
+                        console.log('[App] Loading all histories from IndexedDB...');
+                        loadHistory(); // PO transactions
+                        loadWaterTempHistory(); // Water temp checks
+                        loadComplaintsHistory(); // Complaints
+
+                        console.log('[App] Offline database ready');
+                    } catch (error) {
+                        console.error('[App] Offline database init failed:', error);
+                        setDbError(error.message);
+                        setDbReady(false);
+                    }
+                }
+
+                setupOfflineDB();
+
+                return () => {
+                    if (syncManagerRef.current) {
+                        syncManagerRef.current.removeListener(() => {});
+                    }
+                };
+            }, []);
 
             // Backend health check - polls every 5 seconds
             useEffect(() => {
@@ -947,6 +1629,21 @@
                     return () => clearInterval(interval);
                 }
             }, [activeView]);
+
+            // Refresh pending transactions and sync status
+            useEffect(() => {
+                if (dbReady && (activeView === 'offlineQueue' || activeView === 'receiving')) {
+                    loadPendingTransactions();
+                    updateSyncStatus();
+
+                    const interval = setInterval(() => {
+                        loadPendingTransactions();
+                        updateSyncStatus();
+                    }, 2000); // Refresh every 2 seconds
+
+                    return () => clearInterval(interval);
+                }
+            }, [dbReady, activeView]);
 
             const checkBackendHealth = async () => {
                 try {
@@ -989,13 +1686,32 @@
 
             const loadWaterTempHistory = async () => {
                 try {
-                    const url = 'http://192.168.0.163:3000/api/water-temp';
-                    const response = await fetch(url);
-                    if (response.ok) {
-                        const data = await response.json();
-                        setWaterTempChecks(data.checks || []);
-                        setBackendStatus('connected');
+                    // ✅ READ FROM LOCAL DB (Single Source of Truth)
+                    console.log('[LocalDB] Loading water temp history from IndexedDB...');
+
+                    if (!offlineDB) {
+                        console.warn('[LocalDB] Database not ready');
+                        return;
                     }
+
+                    // Always read from IndexedDB (works offline!)
+                    const checks = await offlineDB.waterchecks
+                        .orderBy('createdAt')
+                        .reverse()
+                        .limit(50)
+                        .toArray();
+
+                    console.log('[LocalDB] ✅ Loaded', checks.length, 'water checks from IndexedDB');
+                    setWaterTempChecks(checks);
+                    setBackendStatus('connected');
+
+                    // Background refresh if online
+                    if (navigator.onLine && syncManagerRef && syncManagerRef.current) {
+                        syncManagerRef.current.downloadWaterChecks().catch(err => {
+                            console.warn('[LocalDB] Background sync failed:', err);
+                        });
+                    }
+
                 } catch (err) {
                     console.error('Failed to load water temp history:', err);
                     setBackendStatus('error');
@@ -1004,13 +1720,32 @@
 
             const loadComplaintsHistory = async () => {
                 try {
-                    const url = 'http://192.168.0.163:3000/api/complaints';
-                    const response = await fetch(url);
-                    if (response.ok) {
-                        const data = await response.json();
-                        setComplaints(data.complaints || []);
-                        setBackendStatus('connected');
+                    // ✅ READ FROM LOCAL DB (Single Source of Truth)
+                    console.log('[LocalDB] Loading complaints history from IndexedDB...');
+
+                    if (!offlineDB) {
+                        console.warn('[LocalDB] Database not ready');
+                        return;
                     }
+
+                    // Always read from IndexedDB (works offline!)
+                    const complaints = await offlineDB.complaints
+                        .orderBy('createdAt')
+                        .reverse()
+                        .limit(50)
+                        .toArray();
+
+                    console.log('[LocalDB] ✅ Loaded', complaints.length, 'complaints from IndexedDB');
+                    setComplaints(complaints);
+                    setBackendStatus('connected');
+
+                    // Background refresh if online
+                    if (navigator.onLine && syncManagerRef && syncManagerRef.current) {
+                        syncManagerRef.current.downloadComplaints().catch(err => {
+                            console.warn('[LocalDB] Background sync failed:', err);
+                        });
+                    }
+
                 } catch (err) {
                     console.error('Failed to load complaints history:', err);
                     setBackendStatus('error');
@@ -1050,6 +1785,47 @@
                         item.id === id ? { ...item, [field]: value } : item
                     )
                 }));
+            };
+
+            // Offline database helpers
+            const loadPendingTransactions = async () => {
+                if (!offlineDB) return;
+
+                try {
+                    const pending = await offlineDB.transactions
+                        .where('syncStatus')
+                        .anyOf(['pending', 'syncing', 'failed'])
+                        .reverse()
+                        .sortBy('createdAt');
+
+                    setPendingTransactions(pending);
+                } catch (error) {
+                    console.error('[App] Failed to load pending transactions:', error);
+                }
+            };
+
+            const updateSyncStatus = async () => {
+                if (syncManagerRef.current) {
+                    const status = await syncManagerRef.current.getSyncStatus();
+                    setSyncStatus(status);
+                }
+            };
+
+            const handleManualSync = async () => {
+                if (syncManagerRef.current) {
+                    console.log('[App] Manual sync triggered - syncing all types');
+
+                    // Upload pending
+                    await syncManagerRef.current.syncPendingTransactions();
+                    await syncManagerRef.current.syncPendingWaterChecks();
+                    await syncManagerRef.current.syncPendingComplaints();
+
+                    // Download updates
+                    await syncManagerRef.current.downloadAllData();
+
+                    await loadPendingTransactions();
+                    await updateSyncStatus();
+                }
             };
 
             // Water temp handlers
@@ -1094,36 +1870,68 @@
 
                 try {
                     setIsSubmitting(true);
-                    const url = 'http://192.168.0.163:3000/api/water-temp';
 
-                    const response = await fetch(url, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            id: 'wt-' + Date.now(),
-                            temp_fahrenheit: tempF,
-                            temp_celsius: tempC,
-                            location: tempLocation || null,
-                            photo_path: tempPhoto.photoPath,
-                            timestamp: Date.now()
-                        })
-                    });
+                    const waterCheckData = {
+                        id: 'wt-' + Date.now(),
+                        temp_fahrenheit: tempF,
+                        temp_celsius: tempC,
+                        location: tempLocation || null,
+                        photo_path: tempPhoto.photoPath,
+                        timestamp: Date.now(),
+                        syncStatus: 'pending',
+                        retryCount: 0,
+                        lastError: null,
+                        lastSyncAttempt: null,
+                        createdAt: Date.now()
+                    };
 
-                    if (response.ok) {
-                        setMessage({ type: 'success', text: 'Temperature check saved!' });
-                        setTimeout(() => {
-                            setActiveView('menu');
-                            // Reset form
-                            setTempF(null);
-                            setTempC(null);
-                            setTempPhoto(null);
-                            setTempLocation('');
-                            setMessage(null);
-                        }, 2000);
+                    // Save to IndexedDB (offline-first)
+                    console.log('[App] Water check - Submit check: dbReady =', dbReady, ', offlineDB =', !!offlineDB);
+
+                    if (dbReady && offlineDB) {
+                        console.log('[App] ✅ Saving water check to IndexedDB...');
+                        await offlineDB.waterchecks.add(waterCheckData);
+                        console.log('[App] ✅ Water check saved to IndexedDB');
+
+                        setMessage({
+                            type: 'success',
+                            text: `Water check saved! ${networkOnline ? 'Syncing...' : 'Will sync when online.'}`
+                        });
+
+                        // Trigger sync if online
+                        if (networkOnline && syncManagerRef.current) {
+                            setTimeout(() => {
+                                syncManagerRef.current.syncPendingWaterChecks();
+                            }, 500);
+                        }
                     } else {
-                        setMessage({ type: 'error', text: 'Failed to save temperature check' });
+                        // Fallback to direct HTTP
+                        console.warn('[App] ❌ IndexedDB not ready for water check, using direct HTTP');
+                        const url = 'http://192.168.0.163:3000/api/water-temp';
+                        const response = await fetch(url, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(waterCheckData)
+                        });
+
+                        if (!response.ok) {
+                            throw new Error('Failed to save water check');
+                        }
+                        setMessage({ type: 'success', text: 'Water check saved via HTTP!' });
                     }
+
+                    setTimeout(() => {
+                        setActiveView('menu');
+                        // Reset form
+                        setTempF(null);
+                        setTempC(null);
+                        setTempPhoto(null);
+                        setTempLocation('');
+                        setMessage(null);
+                    }, 2000);
+
                 } catch (err) {
+                    console.error('Water check submit error:', err);
                     setMessage({ type: 'error', text: `Error: ${err.message}` });
                 } finally {
                     setIsSubmitting(false);
@@ -1200,39 +2008,71 @@
 
                 try {
                     setIsSubmitting(true);
-                    const url = 'http://192.168.0.163:3000/api/complaints';
 
-                    const response = await fetch(url, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            id: 'comp-' + Date.now(),
-                            barcode: complaintBarcode,
-                            product_sku: complaintProduct.sku,
-                            product_name: complaintProduct.name,
-                            complaint_type: complaintType,
-                            description: complaintDescription,
-                            photo_path: complaintPhoto?.photoPath || null,
-                            timestamp: Date.now()
-                        })
-                    });
+                    const complaintData = {
+                        id: 'comp-' + Date.now(),
+                        barcode: complaintBarcode,
+                        product_sku: complaintProduct.sku,
+                        product_name: complaintProduct.name,
+                        complaint_type: complaintType,
+                        description: complaintDescription,
+                        photo_path: complaintPhoto?.photoPath || null,
+                        timestamp: Date.now(),
+                        syncStatus: 'pending',
+                        retryCount: 0,
+                        lastError: null,
+                        lastSyncAttempt: null,
+                        createdAt: Date.now()
+                    };
 
-                    if (response.ok) {
-                        setMessage({ type: 'success', text: 'Complaint registered!' });
-                        setTimeout(() => {
-                            setActiveView('menu');
-                            // Reset form
-                            setComplaintBarcode('');
-                            setComplaintProduct(null);
-                            setComplaintType('');
-                            setComplaintDescription('');
-                            setComplaintPhoto(null);
-                            setMessage(null);
-                        }, 2000);
+                    // Save to IndexedDB (offline-first)
+                    console.log('[App] Complaint - Submit check: dbReady =', dbReady, ', offlineDB =', !!offlineDB);
+
+                    if (dbReady && offlineDB) {
+                        console.log('[App] ✅ Saving complaint to IndexedDB...');
+                        await offlineDB.complaints.add(complaintData);
+                        console.log('[App] ✅ Complaint saved to IndexedDB');
+
+                        setMessage({
+                            type: 'success',
+                            text: `Complaint registered! ${networkOnline ? 'Syncing...' : 'Will sync when online.'}`
+                        });
+
+                        // Trigger sync if online
+                        if (networkOnline && syncManagerRef.current) {
+                            setTimeout(() => {
+                                syncManagerRef.current.syncPendingComplaints();
+                            }, 500);
+                        }
                     } else {
-                        setMessage({ type: 'error', text: 'Failed to register complaint' });
+                        // Fallback to direct HTTP
+                        console.warn('[App] ❌ IndexedDB not ready for complaint, using direct HTTP');
+                        const url = 'http://192.168.0.163:3000/api/complaints';
+                        const response = await fetch(url, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(complaintData)
+                        });
+
+                        if (!response.ok) {
+                            throw new Error('Failed to register complaint');
+                        }
+                        setMessage({ type: 'success', text: 'Complaint registered via HTTP!' });
                     }
+
+                    setTimeout(() => {
+                        setActiveView('menu');
+                        // Reset form
+                        setComplaintBarcode('');
+                        setComplaintProduct(null);
+                        setComplaintType('');
+                        setComplaintDescription('');
+                        setComplaintPhoto(null);
+                        setMessage(null);
+                    }, 2000);
+
                 } catch (err) {
+                    console.error('Complaint submit error:', err);
                     setMessage({ type: 'error', text: `Error: ${err.message}` });
                 } finally {
                     setIsSubmitting(false);
@@ -1272,17 +2112,48 @@
                         poNumber: transaction.poNumber.trim(),
                         vendor: transaction.vendor.trim(),
                         lineItems: transaction.lineItems.map(({ id, ...item }) => item),
-                        createdAt: Date.now()
+                        createdAt: Date.now(),
+                        syncStatus: 'pending',
+                        retryCount: 0,
+                        lastError: null,
+                        lastSyncAttempt: null
                     };
 
-                    // Submit via HTTP
-                    await submitTransaction(transactionData);
+                    // Save to IndexedDB (offline-first)
+                    console.log('[App] Submit check: dbReady =', dbReady, ', offlineDB =', !!offlineDB, ', networkOnline =', networkOnline);
 
-                    // Success
-                    setMessage({
-                        type: 'success',
-                        text: `Transaction ${transaction.poNumber} submitted successfully`
-                    });
+                    if (dbReady && offlineDB) {
+                        console.log('[App] ✅ Saving transaction to IndexedDB...');
+                        await offlineDB.transactions.add(transactionData);
+                        console.log('[App] ✅ Transaction saved to IndexedDB');
+
+                        // Success message
+                        setMessage({
+                            type: 'success',
+                            text: `Transaction ${transaction.poNumber} saved! ${networkOnline ? 'Syncing...' : 'Will sync when online.'}`
+                        });
+
+                        // Trigger sync if online
+                        if (networkOnline && syncManagerRef.current) {
+                            setTimeout(() => {
+                                syncManagerRef.current.syncPendingTransactions();
+                            }, 500);
+                        }
+
+                        // Reload pending transactions
+                        await loadPendingTransactions();
+                        await updateSyncStatus();
+
+                    } else {
+                        // Fallback to direct HTTP if IndexedDB not available
+                        console.warn('[App] ❌ IndexedDB not ready, using direct HTTP');
+                        console.warn('[App] Reason: dbReady =', dbReady, ', offlineDB =', !!offlineDB);
+                        await submitTransaction(transactionData);
+                        setMessage({
+                            type: 'success',
+                            text: `Transaction ${transaction.poNumber} submitted via HTTP`
+                        });
+                    }
 
                     // Reset form
                     setTransaction({
@@ -1290,9 +2161,6 @@
                         vendor: '',
                         lineItems: []
                     });
-
-                    // Update status
-                    setBackendStatus('connected');
 
                     // Reload history if on history tab
                     if (activeTab === 'history') {
@@ -1305,16 +2173,164 @@
                         type: 'error',
                         text: `Error: ${err.message}`
                     });
-                    setBackendStatus('error');
                 } finally {
                     setIsSubmitting(false);
                 }
             };
 
+            // Network status badge component
+            const NetworkStatusBadge = () => (
+                <div style={{
+                    display: 'inline-block',
+                    padding: '6px 12px',
+                    borderRadius: '4px',
+                    fontSize: '14px',
+                    fontWeight: '500',
+                    marginTop: '8px',
+                    background: networkOnline ? '#e8f5e9' : '#ffebee',
+                    color: networkOnline ? '#2e7d32' : '#c62828'
+                }}>
+                    {networkOnline ? '🟢 Online' : '🔴 Offline'}
+                    {dbReady && ` | 💾 DB Ready`}
+                    {dbError && ` | ⚠️ DB Error`}
+                </div>
+            );
+
+            // Sync progress indicator component
+            const SyncProgressIndicator = () => {
+                if (!syncStatus || syncStatus.syncing === 0) return null;
+
+                return (
+                    <div style={{
+                        padding: '12px',
+                        background: '#e3f2fd',
+                        borderRadius: '4px',
+                        marginTop: '12px',
+                        borderLeft: '4px solid #2196f3'
+                    }}>
+                        <div style={{ marginBottom: '8px' }}>
+                            Syncing {syncStatus.syncing} / {syncStatus.pending + syncStatus.syncing} items...
+                        </div>
+                        <div style={{
+                            width: '100%',
+                            height: '8px',
+                            background: '#ddd',
+                            borderRadius: '4px',
+                            overflow: 'hidden'
+                        }}>
+                            <div style={{
+                                width: `${(syncStatus.syncing / (syncStatus.pending + syncStatus.syncing)) * 100}%`,
+                                height: '100%',
+                                background: '#2196f3',
+                                transition: 'width 0.3s'
+                            }}></div>
+                        </div>
+                    </div>
+                );
+            };
+
+            // Pending transactions list component
+            const PendingTransactionsList = () => (
+                <div className="form-section">
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <h3>Pending Sync Queue ({pendingTransactions.length})</h3>
+                        <button
+                            className="feature-btn primary"
+                            onClick={handleManualSync}
+                            disabled={!networkOnline || !dbReady}
+                        >
+                            🔄 Sync Now
+                        </button>
+                    </div>
+
+                    <NetworkStatusBadge />
+                    <SyncProgressIndicator />
+
+                    {syncStatus && (
+                        <div style={{ marginTop: '12px', fontSize: '14px', color: '#666' }}>
+                            <div style={{ fontWeight: '600', marginBottom: '8px' }}>
+                                Total: Pending: {syncStatus.pending} | Syncing: {syncStatus.syncing} |
+                                Synced: {syncStatus.synced} | Failed: {syncStatus.failed}
+                            </div>
+                            {(syncStatus.transactions.pending > 0 || syncStatus.transactions.syncing > 0 || syncStatus.transactions.failed > 0) && (
+                                <div style={{ marginLeft: '12px', color: '#2196f3' }}>
+                                    📋 Transactions: {syncStatus.transactions.pending} pending, {syncStatus.transactions.syncing} syncing, {syncStatus.transactions.failed} failed
+                                </div>
+                            )}
+                            {(syncStatus.waterchecks.pending > 0 || syncStatus.waterchecks.syncing > 0 || syncStatus.waterchecks.failed > 0) && (
+                                <div style={{ marginLeft: '12px', color: '#00bcd4' }}>
+                                    💧 Water Checks: {syncStatus.waterchecks.pending} pending, {syncStatus.waterchecks.syncing} syncing, {syncStatus.waterchecks.failed} failed
+                                </div>
+                            )}
+                            {(syncStatus.complaints.pending > 0 || syncStatus.complaints.syncing > 0 || syncStatus.complaints.failed > 0) && (
+                                <div style={{ marginLeft: '12px', color: '#ff9800' }}>
+                                    ⚠️ Complaints: {syncStatus.complaints.pending} pending, {syncStatus.complaints.syncing} syncing, {syncStatus.complaints.failed} failed
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    {pendingTransactions.length === 0 ? (
+                        <div className="empty-state">
+                            <p>No pending transactions</p>
+                            <p style={{ fontSize: '14px', marginTop: '8px' }}>
+                                All transactions have been synced
+                            </p>
+                        </div>
+                    ) : (
+                        <div className="transaction-history">
+                            {pendingTransactions.map(tx => (
+                                <div key={tx.transactionId} className="history-item" style={{
+                                    borderLeft: `4px solid ${
+                                        tx.syncStatus === 'syncing' ? '#2196f3' :
+                                        tx.syncStatus === 'failed' ? '#f44336' :
+                                        tx.syncStatus === 'synced' ? '#4caf50' : '#ff9800'
+                                    }`
+                                }}>
+                                    <div className="history-item-header">
+                                        <strong>PO: {tx.poNumber}</strong>
+                                        <span style={{
+                                            fontSize: '12px',
+                                            padding: '4px 8px',
+                                            borderRadius: '4px',
+                                            background: tx.syncStatus === 'syncing' ? '#e3f2fd' :
+                                                       tx.syncStatus === 'failed' ? '#ffebee' :
+                                                       tx.syncStatus === 'synced' ? '#e8f5e9' : '#fff3e0',
+                                            color: tx.syncStatus === 'syncing' ? '#1976d2' :
+                                                   tx.syncStatus === 'failed' ? '#c62828' :
+                                                   tx.syncStatus === 'synced' ? '#2e7d32' : '#f57c00'
+                                        }}>
+                                            {tx.syncStatus.toUpperCase()}
+                                        </span>
+                                    </div>
+                                    <div className="history-item-details">
+                                        <div><strong>Transaction ID:</strong> {tx.transactionId}</div>
+                                        <div><strong>Vendor:</strong> {tx.vendor}</div>
+                                        <div><strong>Line Items:</strong> {tx.lineItems?.length || 0} item(s)</div>
+                                        <div><strong>Created:</strong> {new Date(tx.createdAt).toLocaleString()}</div>
+                                        {tx.retryCount > 0 && (
+                                            <div><strong>Retry Count:</strong> {tx.retryCount}</div>
+                                        )}
+                                        {tx.lastError && (
+                                            <div style={{ color: '#c62828' }}><strong>Error:</strong> {tx.lastError}</div>
+                                        )}
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+
+                    <button className="back-btn" onClick={() => setActiveView('menu')}>← Back to Menu</button>
+                </div>
+            );
+
             // Menu view component
             const MenuView = () => (
                 <div className="menu-container">
                     <h2>Select Task</h2>
+
+                    <NetworkStatusBadge />
+
                     <div className="menu-cards">
                         <div className="menu-card" onClick={() => setActiveView('receiving')}>
                             <div className="card-icon">📦</div>
@@ -1334,6 +2350,13 @@
                             <div className="card-icon">⚠️</div>
                             <h3>Register Complaint</h3>
                             <p>Scan barcode and report issue</p>
+                            <button>Open</button>
+                        </div>
+
+                        <div className="menu-card" onClick={() => setActiveView('offlineQueue')}>
+                            <div className="card-icon">💾</div>
+                            <h3>Offline Sync Queue</h3>
+                            <p>View pending transactions ({pendingTransactions.length})</p>
                             <button>Open</button>
                         </div>
                     </div>
@@ -1359,15 +2382,33 @@
                 <div className="warehouse-app">
                     <div className="header">
                         <h2>Warehouse Clerk Module</h2>
-                        <div className={`connection-status ${backendStatus}`}>
-                            {backendStatus === 'connected' && 'Connected to 192.168.0.163:3000'}
-                            {backendStatus === 'error' && 'Cannot reach backend'}
-                            {backendStatus === 'unknown' && 'Checking connection...'}
+                        <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
+                            <div className={`connection-status ${backendStatus}`}>
+                                {backendStatus === 'connected' && 'Backend: Connected'}
+                                {backendStatus === 'error' && 'Backend: Offline'}
+                                {backendStatus === 'unknown' && 'Backend: Checking...'}
+                            </div>
+                            <NetworkStatusBadge />
+                            {syncStatus && syncStatus.pending > 0 && (
+                                <div style={{
+                                    padding: '6px 12px',
+                                    borderRadius: '4px',
+                                    fontSize: '14px',
+                                    background: '#fff3e0',
+                                    color: '#f57c00',
+                                    fontWeight: '500'
+                                }}>
+                                    📤 {syncStatus.pending} pending sync
+                                </div>
+                            )}
                         </div>
                     </div>
 
                     {/* Menu View */}
                     {activeView === 'menu' && <MenuView />}
+
+                    {/* Offline Sync Queue View */}
+                    {activeView === 'offlineQueue' && <PendingTransactionsList />}
 
                     {/* Water Temperature Check View */}
                     {activeView === 'waterTemp' && (

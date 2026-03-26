@@ -6,6 +6,7 @@ import '../modules/module_loader.dart';
 import 'offline_bridge_extension.dart';
 import 'scanner_bridge_extension.dart';
 import 'photo_bridge_extension.dart';
+import 'connectivity_bridge_extension.dart';
 
 /// Bridge method result
 class BridgeResult {
@@ -44,6 +45,9 @@ class ShellBridge {
   // Phase 3: Module loading and offline support
   final ModuleLoader _moduleLoader = ModuleLoader.instance;
   final OfflineBridgeExtension _offlineExtension = OfflineBridgeExtension();
+
+  // Phase 4: Connectivity monitoring (React-first architecture)
+  final ConnectivityBridgeExtension _connectivityExtension = ConnectivityBridgeExtension();
 
   // Phase 5: Scanner extension
   ScannerBridgeExtension? _scannerExtension;
@@ -347,11 +351,12 @@ class ShellBridge {
   // ========== Phase 3: Offline Bridge Methods ==========
 
   /// Get network state
+  /// Get network state (Phase 4: Updated to use ConnectivityBridgeExtension)
   Future<Map<String, dynamic>> _handleGetNetworkState(
     Map<dynamic, dynamic>? args,
   ) async {
     try {
-      final networkState = await _offlineExtension.getNetworkState();
+      final networkState = await _connectivityExtension.getNetworkState();
       return BridgeResult.success(networkState).toJson();
     } catch (e) {
       return BridgeResult.error('Failed to get network state: $e').toJson();
@@ -359,41 +364,33 @@ class ShellBridge {
   }
 
   /// Get pending sync count
+  /// DEPRECATED (Phase 4): Now handled by React/IndexedDB
+  /// Kept for backward compatibility only
   Future<Map<String, dynamic>> _handleGetPendingSyncCount(
     Map<dynamic, dynamic>? args,
   ) async {
-    try {
-      final count = await _offlineExtension.getPendingSyncCount();
-      return BridgeResult.success({'count': count}).toJson();
-    } catch (e) {
-      return BridgeResult.error('Failed to get pending sync count: $e').toJson();
-    }
+    print('[ShellBridge] DEPRECATED: getPendingSyncCount - use React SyncManager instead');
+    return BridgeResult.success({'count': 0, 'deprecated': true}).toJson();
   }
 
   /// Force sync now
+  /// DEPRECATED (Phase 4): Now handled by React/IndexedDB
+  /// Kept for backward compatibility only
   Future<Map<String, dynamic>> _handleForceSyncNow(
     Map<dynamic, dynamic>? args,
   ) async {
-    try {
-      final syncResult = await _offlineExtension.forceSyncNow();
-      return BridgeResult.success(syncResult).toJson();
-    } catch (e) {
-      return BridgeResult.error('Failed to force sync: $e').toJson();
-    }
+    print('[ShellBridge] DEPRECATED: forceSyncNow - use React SyncManager instead');
+    return BridgeResult.success({'synced': 0, 'deprecated': true}).toJson();
   }
 
   /// Submit offline transaction (Phase 4)
+  /// DEPRECATED (Phase 4): Now handled by React/IndexedDB
+  /// Kept for backward compatibility only
   Future<Map<String, dynamic>> _handleSubmitOfflineTransaction(
     Map<dynamic, dynamic>? args,
   ) async {
-    try {
-      final arguments = args as Map<String, dynamic>;
-      final result = await _offlineExtension.submitOfflineTransaction(arguments);
-      return BridgeResult.success(result).toJson();
-    } catch (e) {
-      print('[ShellBridge] Error submitting offline transaction: $e');
-      return BridgeResult.error('Failed to submit transaction: $e').toJson();
-    }
+    print('[ShellBridge] DEPRECATED: submitOfflineTransaction - use React IndexedDB instead');
+    return BridgeResult.error('DEPRECATED: Use React IndexedDB storage instead').toJson();
   }
 
   // Phase 3 Full Offline: Offline-first transaction submission
@@ -491,6 +488,14 @@ class ShellBridge {
   void registerPhotoExtension(PhotoBridgeExtension extension) {
     _photoExtension = extension;
     print('[ShellBridge] Photo extension registered');
+  }
+
+  // ========== Phase 4: Connectivity Monitoring ==========
+
+  /// Initialize connectivity monitoring (called from main.dart when WebView is ready)
+  void initializeConnectivityMonitoring(dynamic webViewController) {
+    _connectivityExtension.initialize(webViewController);
+    print('[ShellBridge] Connectivity monitoring initialized');
   }
 
   /// Capture photo

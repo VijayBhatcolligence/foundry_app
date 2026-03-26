@@ -17,6 +17,7 @@ import 'security/module_verifier.dart';
 import 'bridge/module_bridge_extension.dart';
 import 'bridge/scanner_bridge_extension.dart';
 import 'bridge/photo_bridge_extension.dart';
+import 'bridge/connectivity_bridge_extension.dart';
 import 'demo/crypto_verification_demo.dart';
 import 'network/network_monitor.dart';
 import 'offline/offline_transaction_queue.dart';
@@ -72,6 +73,9 @@ class _ShellHomePageState extends State<ShellHomePage> {
 
   // Phase 5.1 Services
   late final PhotoBridgeExtension _photoBridgeExtension;
+
+  // Phase 4 Services (Connectivity Monitoring)
+  late final ConnectivityBridgeExtension _connectivityBridgeExtension;
 
   // WebView controller
   late final WebViewController _webViewController;
@@ -167,6 +171,13 @@ class _ShellHomePageState extends State<ShellHomePage> {
       _photoBridgeExtension.registerWithBridge(_shellBridge);
       _shellBridge.registerPhotoExtension(_photoBridgeExtension);
       print('[Phase 5.1] Photo integration complete - Photo methods registered');
+
+      // Phase 4: Initialize connectivity bridge extension
+      print('[Phase 4] Creating connectivity bridge extension...');
+      _connectivityBridgeExtension = ConnectivityBridgeExtension();
+      // Initialize connectivity monitoring with WebView controller
+      _connectivityBridgeExtension.initialize(_webViewController);
+      print('[Phase 4] ✅ Connectivity bridge extension created and initialized');
 
       // Phase 3 services - Offline & Critical Workflow
       print('[Phase 3] Initializing offline and network services...');
@@ -288,6 +299,9 @@ class _ShellHomePageState extends State<ShellHomePage> {
       (_webViewController.platform as AndroidWebViewController)
           .setMediaPlaybackRequiresUserGesture(false);
     }
+
+    // Phase 4: Connectivity monitoring will be initialized after services are ready
+    // See _initializeServicesAsync() where _connectivityBridgeExtension.initialize() is called
   }
 
   /// Injects bridge interface into WebView JavaScript context
