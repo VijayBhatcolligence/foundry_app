@@ -3,10 +3,12 @@ import '../auth/mock_auth_service.dart';
 import '../position/position_resolver.dart';
 import '../session/session_broker.dart';
 import '../modules/module_loader.dart';
+import '../storage/action_queue_db.dart';
 import 'offline_bridge_extension.dart';
 import 'scanner_bridge_extension.dart';
 import 'photo_bridge_extension.dart';
 import 'connectivity_bridge_extension.dart';
+import 'file_bridge_extension.dart'; // NEW: File operations only
 
 /// Bridge method result
 class BridgeResult {
@@ -55,6 +57,12 @@ class ShellBridge {
   // Phase 5.1: Photo extension
   PhotoBridgeExtension? _photoExtension;
 
+  // NEW: File operations only (IndexedDB-first architecture)
+  final FileBridgeExtension _fileExtension = FileBridgeExtension();
+
+  // DEPRECATED Phase 2: Action Queue DB (moved to IndexedDB)
+  ActionQueueDB? _actionQueueDB;
+
   // Current active position after authentication
   Position? _currentPosition;
 
@@ -63,10 +71,12 @@ class ShellBridge {
     required MockAuthService authService,
     required PositionResolver positionResolver,
     required SessionBroker sessionBroker,
+    ActionQueueDB? actionQueueDB,
   })  : _channel = channel,
         _authService = authService,
         _positionResolver = positionResolver,
-        _sessionBroker = sessionBroker {
+        _sessionBroker = sessionBroker,
+        _actionQueueDB = actionQueueDB {
     _registerHandlers();
   }
 
@@ -144,6 +154,41 @@ class ShellBridge {
 
         case 'listPhotos':
           return await _handleListPhotos(call.arguments);
+
+        case 'readFile':
+          return await _handleReadFile(call.arguments);
+
+        // NEW: File Bridge Methods (IndexedDB-first architecture)
+        case 'saveFile':
+          return await _handleSaveFile(call.arguments);
+
+        case 'readFileBridge':
+          return await _handleReadFileBridge(call.arguments);
+
+        case 'deleteFile':
+          return await _handleDeleteFile(call.arguments);
+
+        case 'listFiles':
+          return await _handleListFiles(call.arguments);
+
+        // DEPRECATED Phase 2: Action Queue methods (moved to IndexedDB)
+        case 'saveAction':
+          return await _handleSaveAction(call.arguments);
+
+        case 'getActions':
+          return await _handleGetActions(call.arguments);
+
+        case 'updateActionStatus':
+          return await _handleUpdateActionStatus(call.arguments);
+
+        case 'deleteAction':
+          return await _handleDeleteAction(call.arguments);
+
+        case 'getPendingCount':
+          return await _handleGetPendingCount(call.arguments);
+
+        case 'incrementRetryCount':
+          return await _handleIncrementRetryCount(call.arguments);
 
         default:
           throw PlatformException(
@@ -557,6 +602,298 @@ class ShellBridge {
     } catch (e) {
       print('[ShellBridge] Error listing photos: $e');
       return BridgeResult.error('Failed to list photos: $e').toJson();
+    }
+  }
+
+  /// Read file from Flutter storage and return as base64
+  /// Used by SyncManager to upload photos to backend
+  Future<Map<String, dynamic>> _handleReadFile(
+    Map<dynamic, dynamic>? args,
+  ) async {
+    try {
+      if (args == null || !args.containsKey('filePath')) {
+        return BridgeResult.error('filePath required').toJson();
+      }
+
+      final filePath = args['filePath'] as String;
+
+      print('[ShellBridge] Reading file: $filePath');
+
+      // Import dart:io and dart:convert for file operations
+      final file = await _photoExtension?.readFileAsBase64(filePath);
+
+      if (file == null) {
+        return BridgeResult.error('Photo extension not available or file not found').toJson();
+      }
+
+      print('[ShellBridge] ✅ File read successfully (${file['size']} bytes)');
+
+      return BridgeResult.success(file).toJson();
+    } catch (e) {
+      print('[ShellBridge] Error reading file: $e');
+      return BridgeResult.error('Failed to read file: $e').toJson();
+    }
+  }
+
+  // ========================================
+  // NEW Phase 2: Action Queue Bridge Methods
+  // ========================================
+
+  /// Save an action to the queue
+  Future<Map<String, dynamic>> _handleSaveAction(
+    Map<dynamic, dynamic>? args,
+  ) async {
+    try {
+      if (_actionQueueDB == null) {
+        return BridgeResult.error('Action queue not initialized').toJson();
+      }
+
+      if (args == null) {
+        return BridgeResult.error('Arguments required').toJson();
+      }
+
+      print('[ShellBridge] Saving action: ${args['id']} (${args['module_id']}/${args['action_type']})');
+
+      final actionId = await _actionQueueDB!.saveAction(Map<String, dynamic>.from(args));
+
+      return {
+        'success': true,
+        'id': actionId,
+      };
+    } catch (e) {
+      print('[ShellBridge] Error saving action: $e');
+      return BridgeResult.error('Failed to save action: $e').toJson();
+    }
+  }
+
+  /// Get actions filtered by module ID and status
+  Future<Map<String, dynamic>> _handleGetActions(
+    Map<dynamic, dynamic>? args,
+  ) async {
+    try {
+      if (_actionQueueDB == null) {
+        return BridgeResult.error('Action queue not initialized').toJson();
+      }
+
+      if (args == null || !args.containsKey('moduleId')) {
+        return BridgeResult.error('moduleId required').toJson();
+      }
+
+      final moduleId = args['moduleId'] as String;
+      final status = args['status'] as String? ?? 'pending';
+
+      print('[ShellBridge] Getting actions: module=$moduleId, status=$status');
+
+      final actions = await _actionQueueDB!.getActions(moduleId, status);
+
+      return {
+        'success': true,
+        'actions': actions,
+      };
+    } catch (e) {
+      print('[ShellBridge] Error getting actions: $e');
+      return BridgeResult.error('Failed to get actions: $e').toJson();
+    }
+  }
+
+  /// Update action status
+  Future<Map<String, dynamic>> _handleUpdateActionStatus(
+    Map<dynamic, dynamic>? args,
+  ) async {
+    try {
+      if (_actionQueueDB == null) {
+        return BridgeResult.error('Action queue not initialized').toJson();
+      }
+
+      if (args == null || !args.containsKey('id') || !args.containsKey('status')) {
+        return BridgeResult.error('id and status required').toJson();
+      }
+
+      final id = args['id'] as String;
+      final status = args['status'] as String;
+      final errorMessage = args['error'] as String?;
+
+      print('[ShellBridge] Updating action status: $id -> $status');
+
+      final success = await _actionQueueDB!.updateActionStatus(
+        id,
+        status,
+        errorMessage,
+      );
+
+      return {
+        'success': success,
+      };
+    } catch (e) {
+      print('[ShellBridge] Error updating action status: $e');
+      return BridgeResult.error('Failed to update action status: $e').toJson();
+    }
+  }
+
+  /// Delete an action
+  Future<Map<String, dynamic>> _handleDeleteAction(
+    Map<dynamic, dynamic>? args,
+  ) async {
+    try {
+      if (_actionQueueDB == null) {
+        return BridgeResult.error('Action queue not initialized').toJson();
+      }
+
+      if (args == null || !args.containsKey('id')) {
+        return BridgeResult.error('id required').toJson();
+      }
+
+      final id = args['id'] as String;
+
+      print('[ShellBridge] Deleting action: $id');
+
+      final success = await _actionQueueDB!.deleteAction(id);
+
+      return {
+        'success': success,
+      };
+    } catch (e) {
+      print('[ShellBridge] Error deleting action: $e');
+      return BridgeResult.error('Failed to delete action: $e').toJson();
+    }
+  }
+
+  /// Get pending count for a module
+  Future<Map<String, dynamic>> _handleGetPendingCount(
+    Map<dynamic, dynamic>? args,
+  ) async {
+    try {
+      if (_actionQueueDB == null) {
+        return BridgeResult.error('Action queue not initialized').toJson();
+      }
+
+      if (args == null || !args.containsKey('moduleId')) {
+        return BridgeResult.error('moduleId required').toJson();
+      }
+
+      final moduleId = args['moduleId'] as String;
+
+      final count = await _actionQueueDB!.getPendingCount(moduleId);
+
+      return {
+        'success': true,
+        'count': count,
+      };
+    } catch (e) {
+      print('[ShellBridge] Error getting pending count: $e');
+      return BridgeResult.error('Failed to get pending count: $e').toJson();
+    }
+  }
+
+  /// Increment retry count for an action
+  Future<Map<String, dynamic>> _handleIncrementRetryCount(
+    Map<dynamic, dynamic>? args,
+  ) async {
+    try {
+      if (_actionQueueDB == null) {
+        return BridgeResult.error('Action queue not initialized').toJson();
+      }
+
+      if (args == null || !args.containsKey('id')) {
+        return BridgeResult.error('id required').toJson();
+      }
+
+      final id = args['id'] as String;
+
+      print('[ShellBridge] Incrementing retry count: $id');
+
+      final success = await _actionQueueDB!.incrementRetryCount(id);
+
+      return {
+        'success': success,
+      };
+    } catch (e) {
+      print('[ShellBridge] Error incrementing retry count: $e');
+      return BridgeResult.error('Failed to increment retry count: $e').toJson();
+    }
+  }
+
+  // ========================================
+  // NEW: File Bridge Methods (IndexedDB-first architecture)
+  // ========================================
+
+  /// Save file from base64 data
+  /// Used when components need to save files (e.g., photos)
+  Future<Map<String, dynamic>> _handleSaveFile(
+    Map<dynamic, dynamic>? args,
+  ) async {
+    try {
+      if (args == null) {
+        return BridgeResult.error('Arguments required').toJson();
+      }
+
+      print('[ShellBridge] Saving file via FileBridge');
+
+      final result = await _fileExtension.saveFile(Map<String, dynamic>.from(args));
+
+      return result;
+    } catch (e) {
+      print('[ShellBridge] Error saving file: $e');
+      return BridgeResult.error('Failed to save file: $e').toJson();
+    }
+  }
+
+  /// Read file and return as base64
+  /// Used by SyncManager to upload files to backend
+  Future<Map<String, dynamic>> _handleReadFileBridge(
+    Map<dynamic, dynamic>? args,
+  ) async {
+    try {
+      if (args == null) {
+        return BridgeResult.error('Arguments required').toJson();
+      }
+
+      print('[ShellBridge] Reading file via FileBridge');
+
+      final result = await _fileExtension.readFile(Map<String, dynamic>.from(args));
+
+      return result;
+    } catch (e) {
+      print('[ShellBridge] Error reading file: $e');
+      return BridgeResult.error('Failed to read file: $e').toJson();
+    }
+  }
+
+  /// Delete file
+  /// Used to clean up files after successful sync
+  Future<Map<String, dynamic>> _handleDeleteFile(
+    Map<dynamic, dynamic>? args,
+  ) async {
+    try {
+      if (args == null) {
+        return BridgeResult.error('Arguments required').toJson();
+      }
+
+      print('[ShellBridge] Deleting file via FileBridge');
+
+      final result = await _fileExtension.deleteFile(Map<String, dynamic>.from(args));
+
+      return result;
+    } catch (e) {
+      print('[ShellBridge] Error deleting file: $e');
+      return BridgeResult.error('Failed to delete file: $e').toJson();
+    }
+  }
+
+  /// List all files
+  /// Utility method for debugging
+  Future<Map<String, dynamic>> _handleListFiles(
+    Map<dynamic, dynamic>? args,
+  ) async {
+    try {
+      print('[ShellBridge] Listing files via FileBridge');
+
+      final result = await _fileExtension.listFiles();
+
+      return result;
+    } catch (e) {
+      print('[ShellBridge] Error listing files: $e');
+      return BridgeResult.error('Failed to list files: $e').toJson();
     }
   }
 }

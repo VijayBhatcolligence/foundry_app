@@ -160,6 +160,39 @@ const initDatabase = () => {
         process.exit(1);
       } else {
         console.log('[Database] Products table created');
+
+        // Seed product data for testing
+        const products = [
+          { sku: 'WH-001', barcode: '1234567890123', name: 'Industrial Hammer', description: 'Heavy-duty construction hammer', location: 'A-12' },
+          { sku: 'WH-002', barcode: '1234567890124', name: 'Steel Wrench Set', description: '10-piece metric wrench set', location: 'B-05' },
+          { sku: 'WH-003', barcode: '1234567890125', name: 'Power Drill', description: '18V cordless drill with battery', location: 'C-22' },
+          { sku: 'WH-004', barcode: '1234567890126', name: 'Safety Goggles', description: 'Impact-resistant eye protection', location: 'D-18' },
+          { sku: 'WH-005', barcode: '1234567890127', name: 'Measuring Tape', description: '25ft retractable measuring tape', location: 'A-08' },
+          { sku: 'WH-006', barcode: '1234567890128', name: 'Screwdriver Set', description: 'Phillips and flathead, 12-piece', location: 'B-14' },
+          { sku: 'WH-007', barcode: '1234567890129', name: 'Work Gloves', description: 'Leather palm work gloves, size L', location: 'D-25' },
+          { sku: 'WH-008', barcode: '1234567890130', name: 'LED Flashlight', description: 'Rechargeable 1000-lumen flashlight', location: 'C-09' },
+          { sku: 'WH-009', barcode: '1234567890131', name: 'Tool Belt', description: 'Heavy-duty canvas tool belt', location: 'E-03' },
+          { sku: 'WH-010', barcode: '1234567890132', name: 'Extension Cord', description: '50ft outdoor extension cord', location: 'A-20' },
+          { sku: 'WH-011', barcode: '1234567890133', name: 'Paint Roller Set', description: 'Includes tray and 3 rollers', location: 'F-11' },
+          { sku: 'WH-012', barcode: '1234567890134', name: 'Utility Knife', description: 'Retractable blade utility knife', location: 'B-07' },
+          { sku: 'WH-013', barcode: '1234567890135', name: 'Duct Tape', description: 'Industrial strength, 60-yard roll', location: 'D-30' },
+          { sku: 'WH-014', barcode: '1234567890136', name: 'Level Tool', description: '24-inch magnetic level', location: 'C-15' },
+          { sku: 'WH-015', barcode: '1234567890137', name: 'Wire Cutters', description: 'Heavy-duty wire cutting pliers', location: 'A-05' },
+        ];
+
+        products.forEach(product => {
+          db.run(
+            'INSERT OR IGNORE INTO products (sku, barcode, name, description, default_location) VALUES (?, ?, ?, ?, ?)',
+            [product.sku, product.barcode, product.name, product.description, product.location],
+            (err) => {
+              if (err && !err.message.includes('UNIQUE constraint')) {
+                console.error(`[Database] Error seeding product ${product.sku}:`, err.message);
+              }
+            }
+          );
+        });
+
+        console.log('[Database] Seeded 15 products for testing');
       }
     });
 
@@ -231,6 +264,120 @@ const initDatabase = () => {
         console.error('[Database] Complaints table creation error:', err.message);
       } else {
         console.log('[Database] Complaints table created');
+      }
+    });
+
+    // NEW Phase 3: Tables for test modules
+
+    // Stock counts table (Inventory Checker)
+    const createStockCountsTableSQL = `
+      CREATE TABLE IF NOT EXISTS stock_counts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        sku TEXT NOT NULL,
+        quantity INTEGER NOT NULL,
+        location TEXT NOT NULL,
+        timestamp INTEGER NOT NULL,
+        created_at INTEGER NOT NULL
+      )
+    `;
+
+    db.run(createStockCountsTableSQL, (err) => {
+      if (err) {
+        console.error('[Database] Stock_counts table creation error:', err.message);
+      } else {
+        console.log('[Database] Stock_counts table created');
+      }
+    });
+
+    // Audit trail table (Inventory Checker)
+    const createAuditTrailTableSQL = `
+      CREATE TABLE IF NOT EXISTS audit_trail (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        action TEXT NOT NULL,
+        notes TEXT,
+        timestamp INTEGER NOT NULL,
+        created_at INTEGER NOT NULL
+      )
+    `;
+
+    db.run(createAuditTrailTableSQL, (err) => {
+      if (err) {
+        console.error('[Database] Audit_trail table creation error:', err.message);
+      } else {
+        console.log('[Database] Audit_trail table created');
+      }
+    });
+
+    // Defects table (Quality Inspector)
+    const createDefectsTableSQL = `
+      CREATE TABLE IF NOT EXISTS defects (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        code TEXT UNIQUE NOT NULL,
+        description TEXT NOT NULL,
+        severity TEXT NOT NULL
+      )
+    `;
+
+    db.run(createDefectsTableSQL, (err) => {
+      if (err) {
+        console.error('[Database] Defects table creation error:', err.message);
+      } else {
+        console.log('[Database] Defects table created');
+
+        // Seed some defect codes
+        const defects = [
+          { code: 'D001', description: 'Surface damage', severity: 'medium' },
+          { code: 'D002', description: 'Missing parts', severity: 'high' },
+          { code: 'D003', description: 'Discoloration', severity: 'low' },
+          { code: 'D004', description: 'Incorrect labeling', severity: 'medium' },
+          { code: 'D005', description: 'Structural defect', severity: 'high' },
+        ];
+
+        defects.forEach(defect => {
+          db.run(
+            'INSERT OR IGNORE INTO defects (code, description, severity) VALUES (?, ?, ?)',
+            [defect.code, defect.description, defect.severity]
+          );
+        });
+      }
+    });
+
+    // Inspection logs table (Quality Inspector)
+    const createInspectionLogsTableSQL = `
+      CREATE TABLE IF NOT EXISTS inspection_logs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        product TEXT NOT NULL,
+        result TEXT NOT NULL,
+        notes TEXT,
+        timestamp INTEGER NOT NULL,
+        created_at INTEGER NOT NULL
+      )
+    `;
+
+    db.run(createInspectionLogsTableSQL, (err) => {
+      if (err) {
+        console.error('[Database] Inspection_logs table creation error:', err.message);
+      } else {
+        console.log('[Database] Inspection_logs table created');
+      }
+    });
+
+    // Reports table (Quality Inspector)
+    const createReportsTableSQL = `
+      CREATE TABLE IF NOT EXISTS reports (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        report_type TEXT NOT NULL,
+        data TEXT NOT NULL,
+        timestamp INTEGER NOT NULL,
+        created_at INTEGER NOT NULL
+      )
+    `;
+
+    db.run(createReportsTableSQL, (err) => {
+      if (err) {
+        console.error('[Database] Reports table creation error:', err.message);
+      } else {
+        console.log('[Database] Reports table created');
       }
     });
   });
@@ -917,6 +1064,582 @@ app.delete('/api/transactions/:transactionId', (req, res) => {
   }
 });
 
+// ========================================
+// NEW Phase 3: API Endpoints for Test Modules
+// ========================================
+
+// 1. GET /api/products - Product search (Inventory Checker)
+app.get('/api/products', (req, res) => {
+  try {
+    const query = req.query.q || '';
+    console.log(`[GET /api/products] Search query: "${query}"`);
+
+    db.all(
+      'SELECT * FROM products WHERE name LIKE ? OR sku LIKE ? ORDER BY name LIMIT 100',
+      [`%${query}%`, `%${query}%`],
+      (err, rows) => {
+        if (err) {
+          console.error('[GET /api/products] Query error:', err.message);
+          return res.status(500).json({
+            success: false,
+            error: `Server error: ${err.message}`
+          });
+        }
+
+        console.log(`[GET /api/products] Found ${rows.length} products`);
+
+        const response = {
+          success: true,
+          data: rows,  // ReferenceDataManager expects "data" field
+          count: rows.length
+        };
+
+        console.log(`[GET /api/products] Response structure:`, {
+          success: response.success,
+          dataIsArray: Array.isArray(response.data),
+          dataLength: response.data?.length,
+          count: response.count
+        });
+
+        res.json(response);
+      }
+    );
+
+  } catch (error) {
+    console.error('[GET /api/products] Error:', error.message);
+    res.status(500).json({
+      success: false,
+      error: `Server error: ${error.message}`
+    });
+  }
+});
+
+// 2. POST /api/stock-counts - Stock count submission (Inventory Checker)
+app.post('/api/stock-counts', (req, res) => {
+  try {
+    const { product_id, new_quantity, timestamp, sku, quantity, location } = req.body;
+
+    console.log('[POST /api/stock-counts] Received stock count:', req.body);
+
+    // Support both new format (product_id, new_quantity) and legacy format (sku, quantity, location)
+    let productId, newQty, countTimestamp;
+
+    if (product_id !== undefined && new_quantity !== undefined) {
+      // New format
+      productId = product_id;
+      newQty = new_quantity;
+      countTimestamp = timestamp;
+
+      console.log('[POST /api/stock-counts] Using new format (product_id, new_quantity)');
+
+      // Validation
+      if (!productId || newQty === undefined || !countTimestamp) {
+        return res.status(400).json({
+          success: false,
+          error: 'Missing required fields: product_id, new_quantity, timestamp'
+        });
+      }
+
+      if (typeof newQty !== 'number' || newQty < 0) {
+        return res.status(400).json({
+          success: false,
+          error: 'new_quantity must be a non-negative number'
+        });
+      }
+
+      // Get product details and update its quantity
+      db.get(
+        'SELECT * FROM products WHERE id = ?',
+        [productId],
+        (err, product) => {
+          if (err) {
+            console.error('[POST /api/stock-counts] Product query error:', err.message);
+            return res.status(500).json({
+              success: false,
+              error: `Server error: ${err.message}`
+            });
+          }
+
+          if (!product) {
+            return res.status(404).json({
+              success: false,
+              error: 'Product not found'
+            });
+          }
+
+          console.log(`[POST /api/stock-counts] Product found: ${product.name} (current qty: ${product.quantity})`);
+
+          const createdAt = Date.now();
+
+          // Save stock count record
+          db.run(
+            'INSERT INTO stock_counts (sku, quantity, location, timestamp, created_at) VALUES (?, ?, ?, ?, ?)',
+            [product.sku, newQty, product.default_location || 'N/A', countTimestamp, createdAt],
+            function(err) {
+              if (err) {
+                console.error('[POST /api/stock-counts] Insert error:', err.message);
+                return res.status(500).json({
+                  success: false,
+                  error: `Server error: ${err.message}`
+                });
+              }
+
+              const countId = this.lastID;
+
+              // Update product quantity
+              db.run(
+                'UPDATE products SET quantity = ? WHERE id = ?',
+                [newQty, productId],
+                function(err) {
+                  if (err) {
+                    console.error('[POST /api/stock-counts] Product update error:', err.message);
+                    // Still return success since count was saved
+                  } else {
+                    console.log(`[POST /api/stock-counts] ✅ Product quantity updated: ${product.quantity} → ${newQty}`);
+                  }
+
+                  console.log(`[POST /api/stock-counts] ✅ Stock count saved with ID: ${countId}`);
+
+                  res.status(201).json({
+                    success: true,
+                    id: countId,
+                    message: 'Stock count saved and product quantity updated',
+                    old_quantity: product.quantity,
+                    new_quantity: newQty
+                  });
+                }
+              );
+            }
+          );
+        }
+      );
+
+    } else if (sku && quantity !== undefined && location) {
+      // Legacy format
+      console.log('[POST /api/stock-counts] Using legacy format (sku, quantity, location)');
+
+      // Validation
+      if (!sku || quantity === undefined || !location || !timestamp) {
+        return res.status(400).json({
+          success: false,
+          error: 'Missing required fields: sku, quantity, location, timestamp'
+        });
+      }
+
+      if (typeof quantity !== 'number' || quantity < 0) {
+        return res.status(400).json({
+          success: false,
+          error: 'Quantity must be a non-negative number'
+        });
+      }
+
+      const createdAt = Date.now();
+
+      db.run(
+        'INSERT INTO stock_counts (sku, quantity, location, timestamp, created_at) VALUES (?, ?, ?, ?, ?)',
+        [sku, quantity, location, timestamp, createdAt],
+        function(err) {
+          if (err) {
+            console.error('[POST /api/stock-counts] Insert error:', err.message);
+            return res.status(500).json({
+              success: false,
+              error: `Server error: ${err.message}`
+            });
+          }
+
+          console.log(`[POST /api/stock-counts] ✅ Stock count saved with ID: ${this.lastID}`);
+
+          res.status(201).json({
+            success: true,
+            id: this.lastID,
+            message: 'Stock count saved'
+          });
+        }
+      );
+
+    } else {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid payload. Expected either (product_id, new_quantity, timestamp) or (sku, quantity, location, timestamp)'
+      });
+    }
+
+  } catch (error) {
+    console.error('[POST /api/stock-counts] Error:', error.message);
+    res.status(500).json({
+      success: false,
+      error: `Server error: ${error.message}`
+    });
+  }
+});
+
+// 3. POST /api/audit-trail - Audit trail submission (Inventory Checker)
+app.post('/api/audit-trail', (req, res) => {
+  try {
+    const { action, notes, timestamp } = req.body;
+
+    console.log('[POST /api/audit-trail] Received audit entry:', {
+      action,
+      notes: notes ? notes.substring(0, 50) : 'none'
+    });
+
+    // Validation
+    if (!action || !timestamp) {
+      return res.status(400).json({
+        success: false,
+        error: 'Missing required fields: action, timestamp'
+      });
+    }
+
+    const createdAt = Date.now();
+
+    db.run(
+      'INSERT INTO audit_trail (action, notes, timestamp, created_at) VALUES (?, ?, ?, ?)',
+      [action, notes || null, timestamp, createdAt],
+      function(err) {
+        if (err) {
+          console.error('[POST /api/audit-trail] Insert error:', err.message);
+          return res.status(500).json({
+            success: false,
+            error: `Server error: ${err.message}`
+          });
+        }
+
+        console.log(`[POST /api/audit-trail] Audit entry saved with ID: ${this.lastID}`);
+
+        res.status(201).json({
+          success: true,
+          id: this.lastID,
+          message: 'Audit entry saved'
+        });
+      }
+    );
+
+  } catch (error) {
+    console.error('[POST /api/audit-trail] Error:', error.message);
+    res.status(500).json({
+      success: false,
+      error: `Server error: ${error.message}`
+    });
+  }
+});
+
+// 4. GET /api/defects/:code - Defect lookup (Quality Inspector)
+app.get('/api/defects/:code', (req, res) => {
+  try {
+    const { code } = req.params;
+    console.log(`[GET /api/defects/${code}] Looking up defect`);
+
+    db.get(
+      'SELECT * FROM defects WHERE code = ?',
+      [code],
+      (err, row) => {
+        if (err) {
+          console.error(`[GET /api/defects/${code}] Query error:`, err.message);
+          return res.status(500).json({
+            success: false,
+            error: `Server error: ${err.message}`
+          });
+        }
+
+        if (!row) {
+          console.log(`[GET /api/defects/${code}] Defect not found`);
+          return res.status(404).json({
+            success: false,
+            error: 'Defect code not found'
+          });
+        }
+
+        console.log(`[GET /api/defects/${code}] Defect found:`, row.description);
+
+        res.json({
+          success: true,
+          defect: row
+        });
+      }
+    );
+
+  } catch (error) {
+    console.error(`[GET /api/defects/${req.params.code}] Error:`, error.message);
+    res.status(500).json({
+      success: false,
+      error: `Server error: ${error.message}`
+    });
+  }
+});
+
+// 5. POST /api/inspection-logs - Inspection log submission (Quality Inspector)
+app.post('/api/inspection-logs', (req, res) => {
+  try {
+    const { product, result, notes, timestamp } = req.body;
+
+    console.log('[POST /api/inspection-logs] Received inspection log:', {
+      product,
+      result
+    });
+
+    // Validation
+    if (!product || !result || !timestamp) {
+      return res.status(400).json({
+        success: false,
+        error: 'Missing required fields: product, result, timestamp'
+      });
+    }
+
+    if (!['pass', 'fail'].includes(result.toLowerCase())) {
+      return res.status(400).json({
+        success: false,
+        error: 'Result must be "pass" or "fail"'
+      });
+    }
+
+    const createdAt = Date.now();
+
+    db.run(
+      'INSERT INTO inspection_logs (product, result, notes, timestamp, created_at) VALUES (?, ?, ?, ?, ?)',
+      [product, result, notes || null, timestamp, createdAt],
+      function(err) {
+        if (err) {
+          console.error('[POST /api/inspection-logs] Insert error:', err.message);
+          return res.status(500).json({
+            success: false,
+            error: `Server error: ${err.message}`
+          });
+        }
+
+        console.log(`[POST /api/inspection-logs] Inspection log saved with ID: ${this.lastID}`);
+
+        res.status(201).json({
+          success: true,
+          id: this.lastID,
+          message: 'Inspection log saved'
+        });
+      }
+    );
+
+  } catch (error) {
+    console.error('[POST /api/inspection-logs] Error:', error.message);
+    res.status(500).json({
+      success: false,
+      error: `Server error: ${error.message}`
+    });
+  }
+});
+
+// 6. POST /api/reports - Report submission (Quality Inspector)
+app.post('/api/reports', (req, res) => {
+  try {
+    // Accept both old format (data, timestamp) and new format (summary, details, etc.)
+    const {
+      report_type,
+      summary,
+      details,
+      priority,
+      submitted_at,
+      photoPath,
+      photoUrl,
+      hasPhoto,
+      photo,  // NEW: base64 photo data from SyncManager
+      // Legacy support
+      data,
+      timestamp
+    } = req.body;
+
+    console.log('[POST /api/reports] Received report:', {
+      type: report_type,
+      summary: summary || 'N/A',
+      hasPhoto: hasPhoto || false,
+      hasPhotoData: !!photo
+    });
+
+    // Validation - support both formats
+    if (!report_type) {
+      return res.status(400).json({
+        success: false,
+        error: 'Missing required field: report_type'
+      });
+    }
+
+    if (!summary && !data) {
+      return res.status(400).json({
+        success: false,
+        error: 'Missing required field: summary or data'
+      });
+    }
+
+    // NEW: Process base64 photo if provided
+    let savedPhotoPath = photoPath;
+    let savedPhotoUrl = photoUrl;
+
+    if (photo && typeof photo === 'string') {
+      try {
+        console.log('[POST /api/reports] Processing base64 photo...');
+
+        // Extract base64 data (remove data:image/...;base64, prefix if present)
+        let base64Data = photo;
+        if (photo.includes(',')) {
+          base64Data = photo.split(',')[1];
+        }
+
+        // Decode base64
+        const buffer = Buffer.from(base64Data, 'base64');
+        console.log('[POST /api/reports] Decoded photo: ' + buffer.length + ' bytes');
+
+        // Generate unique filename
+        const filename = `report_${Date.now()}_${Math.random().toString(36).substring(7)}.jpg`;
+        const uploadDir = path.join(__dirname, 'uploads', 'reports');
+        const filePath = path.join(uploadDir, filename);
+
+        // Create directory if it doesn't exist
+        if (!fs.existsSync(uploadDir)) {
+          fs.mkdirSync(uploadDir, { recursive: true });
+          console.log('[POST /api/reports] Created uploads directory: ' + uploadDir);
+        }
+
+        // Write file
+        fs.writeFileSync(filePath, buffer);
+        console.log('[POST /api/reports] ✅ Photo saved: ' + filePath);
+
+        // Set paths for storage
+        savedPhotoPath = filePath;
+        savedPhotoUrl = `/uploads/reports/${filename}`;
+      } catch (photoError) {
+        console.error('[POST /api/reports] Error saving photo:', photoError.message);
+        // Continue without photo
+      }
+    }
+
+    // Build data object from new format or use legacy data
+    let reportData;
+    if (summary) {
+      // New format
+      reportData = {
+        summary,
+        details: details || '',
+        priority: priority || 'normal',
+        photoPath: savedPhotoPath || null,
+        photoUrl: savedPhotoUrl || null,
+        hasPhoto: hasPhoto || !!photo
+      };
+    } else {
+      // Legacy format
+      reportData = typeof data === 'string' ? JSON.parse(data) : data;
+    }
+
+    const createdAt = Date.now();
+    const reportTimestamp = submitted_at || timestamp || new Date().toISOString();
+    const dataStr = JSON.stringify(reportData);
+
+    db.run(
+      'INSERT INTO reports (report_type, data, timestamp, created_at) VALUES (?, ?, ?, ?)',
+      [report_type, dataStr, reportTimestamp, createdAt],
+      function(err) {
+        if (err) {
+          console.error('[POST /api/reports] Insert error:', err.message);
+          return res.status(500).json({
+            success: false,
+            error: `Server error: ${err.message}`
+          });
+        }
+
+        console.log(`[POST /api/reports] ✅ Report saved with ID: ${this.lastID}`);
+        if (hasPhoto) {
+          console.log(`[POST /api/reports] 📸 Photo URL: ${photoUrl || photoPath}`);
+        }
+
+        res.status(201).json({
+          success: true,
+          id: this.lastID,
+          message: 'Report saved successfully'
+        });
+      }
+    );
+
+  } catch (error) {
+    console.error('[POST /api/reports] Error:', error.message);
+    res.status(500).json({
+      success: false,
+      error: `Server error: ${error.message}`
+    });
+  }
+});
+
+// ====================================================================
+// File Upload Endpoint (Base64)
+// ====================================================================
+
+/**
+ * POST /api/upload
+ *
+ * Upload a file from React (base64 encoded)
+ * Used by SyncManager when syncing actions with photos
+ *
+ * Request body:
+ * {
+ *   fileName: "photo.jpg",
+ *   fileData: "data:image/jpeg;base64,/9j/4AAQ..." (or just base64 string)
+ * }
+ *
+ * Response:
+ * {
+ *   success: true,
+ *   fileUrl: "/uploads/photo-1234567890.jpg"
+ * }
+ */
+app.post('/api/upload', async (req, res) => {
+  try {
+    console.log('[POST /api/upload] File upload request received');
+
+    const { fileName, fileData } = req.body;
+
+    if (!fileName || !fileData) {
+      console.error('[POST /api/upload] Missing fileName or fileData');
+      return res.status(400).json({
+        success: false,
+        error: 'Missing fileName or fileData in request body'
+      });
+    }
+
+    // Extract base64 data (handle data URLs like "data:image/jpeg;base64,...")
+    let base64Data = fileData;
+    if (fileData.includes('base64,')) {
+      base64Data = fileData.split('base64,')[1];
+    }
+
+    // Decode base64 to buffer
+    const buffer = Buffer.from(base64Data, 'base64');
+
+    // Generate unique filename
+    const ext = path.extname(fileName);
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    const uniqueFileName = `photo-${uniqueSuffix}${ext}`;
+    const filePath = path.join(UPLOADS_DIR, uniqueFileName);
+
+    // Write file to disk
+    fs.writeFileSync(filePath, buffer);
+
+    // Return file URL (relative to server)
+    const fileUrl = `/uploads/${uniqueFileName}`;
+
+    console.log('[POST /api/upload] ✅ File saved:', fileUrl);
+    console.log('[POST /api/upload] File size:', (buffer.length / 1024).toFixed(2), 'KB');
+
+    res.json({
+      success: true,
+      fileUrl: fileUrl,
+      fileName: uniqueFileName,
+      size: buffer.length
+    });
+
+  } catch (error) {
+    console.error('[POST /api/upload] Error:', error.message);
+    res.status(500).json({
+      success: false,
+      error: `Upload failed: ${error.message}`
+    });
+  }
+});
+
 // 404 handler
 app.use((req, res) => {
   res.status(404).json({
@@ -963,6 +1686,7 @@ app.listen(PORT, '0.0.0.0', () => {
   });
   console.log('='.repeat(60));
   console.log('API Endpoints:');
+  console.log('  --- Sample Warehouse ---');
   console.log(`  POST   http://localhost:${PORT}/api/transactions`);
   console.log(`  GET    http://localhost:${PORT}/api/transactions`);
   console.log(`  GET    http://localhost:${PORT}/api/transactions/:id`);
@@ -974,6 +1698,15 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`  GET    http://localhost:${PORT}/api/water-temp`);
   console.log(`  POST   http://localhost:${PORT}/api/complaints`);
   console.log(`  GET    http://localhost:${PORT}/api/complaints`);
+  console.log('  --- NEW Phase 3: Test Modules ---');
+  console.log(`  GET    http://localhost:${PORT}/api/products?q=search`);
+  console.log(`  POST   http://localhost:${PORT}/api/stock-counts`);
+  console.log(`  POST   http://localhost:${PORT}/api/audit-trail`);
+  console.log(`  GET    http://localhost:${PORT}/api/defects/:code`);
+  console.log(`  POST   http://localhost:${PORT}/api/inspection-logs`);
+  console.log(`  POST   http://localhost:${PORT}/api/reports`);
+  console.log('  --- Utilities ---');
+  console.log(`  GET    http://localhost:${PORT}/api/health`);
   console.log(`  GET    http://localhost:${PORT}/api/debug/network`);
   console.log('='.repeat(60));
 });

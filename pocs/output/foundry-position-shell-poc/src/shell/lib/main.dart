@@ -24,6 +24,11 @@ import 'offline/offline_transaction_queue.dart';
 import 'offline/sync_manager.dart';
 import 'modules/update_scheduler.dart';
 import 'ui/module_selection_screen.dart';
+import 'storage/local_http_server.dart';
+import 'storage/action_queue_db.dart';
+import 'server/server_manager.dart';
+import 'webview/multi_webview_manager.dart';
+import 'screens/multi_module_screen.dart';
 
 void main() {
   runApp(const FoundryShellApp());
@@ -77,6 +82,17 @@ class _ShellHomePageState extends State<ShellHomePage> {
   // Phase 4 Services (Connectivity Monitoring)
   late final ConnectivityBridgeExtension _connectivityBridgeExtension;
 
+  // NEW Phase 1: Local HTTP Server (DEPRECATED - replaced by ServerManager)
+  // Made nullable since we're using ServerManager now
+  LocalHttpServer? _localHttpServer;
+
+  // NEW Phase 2: Action Queue DB (source of truth)
+  late final ActionQueueDB _actionQueueDB;
+
+  // NEW Parallel Architecture: Server Manager and Multi-WebView Manager
+  late final ServerManager _serverManager;
+  late final MultiWebViewManager _multiWebViewManager;
+
   // WebView controller
   late final WebViewController _webViewController;
 
@@ -105,6 +121,36 @@ class _ShellHomePageState extends State<ShellHomePage> {
   /// Initializes core services asynchronously
   Future<void> _initializeServicesAsync() async {
     try {
+      // NEW Parallel Architecture: Start Multiple HTTP Servers
+      print('[Parallel Architecture] ========================================');
+      print('[Parallel Architecture] Starting Server Manager...');
+      _serverManager = ServerManager();
+      await _serverManager.startAll();
+      print('[Parallel Architecture] ✅ All module servers started');
+      print('[Parallel Architecture] 🚀 Multiple ports active for parallel execution');
+      _serverManager.printStatus();
+      print('[Parallel Architecture] ========================================');
+
+      // NEW Parallel Architecture: Initialize Multi-WebView Manager
+      print('[Parallel Architecture] Initializing Multi-WebView Manager...');
+      _multiWebViewManager = MultiWebViewManager();
+      print('[Parallel Architecture] ✅ Multi-WebView Manager initialized');
+
+      // OLD LocalHttpServer REMOVED - ServerManager handles all servers now
+      // Port 8080 conflict: ServerManager already uses port 8080 for test-quality-inspector
+      // Keeping this commented for reference:
+      // _localHttpServer = LocalHttpServer();
+      // await _localHttpServer.start();
+
+      // NEW Phase 2: Initialize Action Queue DB (source of truth)
+      print('[Phase 2] ========================================');
+      print('[Phase 2] Initializing Action Queue Database...');
+      _actionQueueDB = ActionQueueDB();
+      await _actionQueueDB.initialize();
+      print('[Phase 2] ✅ Action Queue DB initialized successfully');
+      print('[Phase 2] 🗄️  SQLite source of truth ready');
+      print('[Phase 2] ========================================');
+
       // Phase 1 services
       _authService = MockAuthService();
       _positionResolver = PositionResolver();
@@ -140,8 +186,14 @@ class _ShellHomePageState extends State<ShellHomePage> {
         authService: _authService,
         positionResolver: _positionResolver,
         sessionBroker: _sessionBroker,
+        actionQueueDB: _actionQueueDB,  // NEW Phase 2: Pass ActionQueueDB
       );
       print('[Main] ShellBridge initialized with handler registered');
+
+      // NEW Parallel Architecture: Register ShellBridge with MultiWebViewManager
+      print('[Parallel Architecture] Registering ShellBridge with MultiWebViewManager...');
+      _multiWebViewManager.registerShellBridge(_shellBridge);
+      print('[Parallel Architecture] ✅ ShellBridge registered - all WebViews will share ONE bridge');
 
       // Register Phase 2 module bridge extension
       print('[ModuleBridge] Registering module management methods...');
@@ -429,10 +481,68 @@ class _ShellHomePageState extends State<ShellHomePage> {
 
           listPhotos: function(lineItemId) {
             return this._call('listPhotos', { lineItemId: lineItemId || 'default' });
+          },
+
+          // Read file from Flutter storage as base64 (for photo upload to backend)
+          readFile: function(filePath) {
+            return this._call('readFile', { filePath: filePath });
+          },
+
+          // Phase 2 (NEW): ActionQueue methods for hybrid architecture
+          saveAction: function(moduleId, actionType, payload) {
+            return this._call('saveAction', {
+              moduleId: moduleId,
+              actionType: actionType,
+              payload: payload
+            });
+          },
+
+          getActions: function(moduleId, status) {
+            return this._call('getActions', {
+              moduleId: moduleId,
+              status: status
+            });
+          },
+
+          markActionSyncing: function(id) {
+            return this._call('markActionSyncing', { id: id });
+          },
+
+          markActionSynced: function(id) {
+            return this._call('markActionSynced', { id: id });
+          },
+
+          markActionError: function(id, error) {
+            return this._call('markActionError', {
+              id: id,
+              error: error
+            });
+          },
+
+          resetActionToPending: function(id) {
+            return this._call('resetActionToPending', { id: id });
+          },
+
+          deleteAction: function(id) {
+            return this._call('deleteAction', { id: id });
+          },
+
+          getPendingCount: function(moduleId) {
+            return this._call('getPendingCount', { moduleId: moduleId });
+          },
+
+          incrementRetryCount: function(id) {
+            return this._call('incrementRetryCount', { id: id });
           }
         };
 
-        console.log('[Shell] Bridge interface injected with all methods');
+        console.log('[Shell] Bridge interface injected with all methods (including ActionQueue)');
+
+        // Resolve the bridge ready promise so ActionQueue can start making calls
+        if (window._resolveBridgeReady) {
+          window._resolveBridgeReady();
+          console.log('[Shell] ✅ Bridge ready promise resolved - ActionQueue can now make calls');
+        }
       })();
     ''');
   }
@@ -560,6 +670,22 @@ class _ShellHomePageState extends State<ShellHomePage> {
 
   /// Phase 3.5: Handles module selection callback
   Future<void> _handleModuleSelected(String moduleId) async {
+    print('[Main] Module selected: $moduleId');
+    print('[Main] Navigating to MultiModuleScreen with parallel architecture');
+
+    // NEW Parallel Architecture: Navigate to MultiModuleScreen
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => MultiModuleScreen(
+          initialModuleId: moduleId,
+        ),
+      ),
+    );
+
+    print('[Main] Returned from MultiModuleScreen');
+
+    // OLD Single-WebView approach (kept for reference, not executed):
+    /*
     setState(() {
       _isLoading = true;
       _statusMessage = 'Loading module: $moduleId';
@@ -581,6 +707,7 @@ class _ShellHomePageState extends State<ShellHomePage> {
         _statusMessage = 'Error loading module: $e';
       });
     }
+    */
   }
 
   /// Loads runtime host HTML in WebView with selected module
@@ -594,17 +721,26 @@ class _ShellHomePageState extends State<ShellHomePage> {
       throw Exception('Module not found: $moduleId');
     }
 
-    // Construct path to module HTML file
-    // Load from Flutter assets (in shell/assets/modules/)
-    final modulePath = 'assets/modules/$moduleId/index.html';
+    // NEW Phase 1: Load from localhost HTTP server instead of file:// assets
+    // This provides stable origin for IndexedDB
+    // NOTE: This is OLD code path - parallel architecture uses MultiModuleScreen
+    if (_localHttpServer == null) {
+      throw Exception('LocalHttpServer not initialized (use MultiModuleScreen for parallel architecture)');
+    }
+    final moduleUrl = '${_localHttpServer!.baseUrl}/$moduleId/';
 
-    print('[RuntimeHost] Loading module from: $modulePath');
+    print('[RuntimeHost] ========================================');
+    print('[RuntimeHost] Loading module from LOCAL HTTP SERVER');
+    print('[RuntimeHost] Module ID: $moduleId');
+    print('[RuntimeHost] Module URL: $moduleUrl');
+    print('[RuntimeHost] Origin will be: ${_localHttpServer!.baseUrl}');
+    print('[RuntimeHost] ========================================');
 
     try {
-      // Load the module HTML file from assets
-      await _webViewController.loadFlutterAsset(modulePath);
+      // Load the module from localhost HTTP server
+      await _webViewController.loadRequest(Uri.parse(moduleUrl));
 
-      print('[RuntimeHost] Module loaded successfully: $moduleId');
+      print('[RuntimeHost] ✅ Module loaded successfully: $moduleId');
     } catch (e) {
       print('[RuntimeHost] Error loading module: $e');
 
@@ -631,7 +767,7 @@ class _ShellHomePageState extends State<ShellHomePage> {
               <p><strong>Error:</strong> $e</p>
               <p style="margin-top: 16px; font-size: 14px;">
                 Check that the module HTML file exists at:<br>
-                <code>$modulePath</code>
+                <code>$moduleUrl</code>
               </p>
             </div>
           </body>
@@ -838,6 +974,13 @@ class _ShellHomePageState extends State<ShellHomePage> {
   void dispose() {
     _usernameController.dispose();
     _passwordController.dispose();
+
+    // NEW Phase 1: Stop local HTTP server (if it was started)
+    if (_localHttpServer != null && _localHttpServer!.isRunning) {
+      print('[Phase 1] Stopping Local HTTP Server...');
+      _localHttpServer!.stop();
+    }
+
     super.dispose();
   }
 }

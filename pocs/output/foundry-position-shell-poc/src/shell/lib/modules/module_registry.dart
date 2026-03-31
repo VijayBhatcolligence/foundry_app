@@ -328,7 +328,7 @@ class ModuleRegistry {
   // Private helper: Load mock registry for POC
   Future<RegistryLoadResult> _loadMockRegistry() async {
     try {
-      // Phase 4: Mock registry with ONLY 1 module (sample-warehouse with transaction UI)
+      // Phase 4-5: Mock registry with 3 modules (sample-warehouse + 2 test modules)
       final mockRegistryJson = {
         'modules': [
           {
@@ -344,6 +344,38 @@ class ModuleRegistry {
               'displayName': 'Warehouse Clerk',
               'description': 'Receive goods against purchase orders and scan item barcodes',
               'categoryId': 'warehouse',
+              'author': 'Foundry Team',
+            },
+          },
+          {
+            'moduleId': 'test-inventory-checker',
+            'version': '1.0.0',
+            'requiredShellVersion': '^1.0.0',
+            'signature': 'B' * 344,
+            'downloadUrl': 'https://mock.foundry.example/modules/test-inventory-checker/1.0.0/module.js',
+            'checksum': 'b' * 64,
+            'downloadSizeBytes': 186368,
+            'publishedAt': DateTime.now().subtract(const Duration(days: 1)).toIso8601String(),
+            'metadata': {
+              'displayName': 'Test: Inventory Checker',
+              'description': 'Demonstrates hybrid architecture with product search, stock counts, and audit trail',
+              'categoryId': 'testing',
+              'author': 'Foundry Team',
+            },
+          },
+          {
+            'moduleId': 'test-quality-inspector',
+            'version': '1.0.0',
+            'requiredShellVersion': '^1.0.0',
+            'signature': 'C' * 344,
+            'downloadUrl': 'https://mock.foundry.example/modules/test-quality-inspector/1.0.0/module.js',
+            'checksum': 'c' * 64,
+            'downloadSizeBytes': 180224,
+            'publishedAt': DateTime.now().subtract(const Duration(days: 1)).toIso8601String(),
+            'metadata': {
+              'displayName': 'Test: Quality Inspector',
+              'description': 'Validates module isolation with defect lookup, inspection logs, and reports',
+              'categoryId': 'testing',
               'author': 'Foundry Team',
             },
           },

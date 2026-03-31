@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ReferenceDataManager Test</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+      max-width: 900px;
+      margin: 50px auto;
+      padding: 20px;
+      background: #f5f5f5;
+    }
+    .container {
+      background: white;
+      padding: 30px;
+      border-radius: 8px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+    h1 {
+      color: #1976d2;
+      margin-top: 0;
+    }
+    .section {
+      margin: 20px 0;
+      padding: 15px;
+      background: #f9f9f9;
+      border-radius: 4px;
+      border-left: 4px solid #2196F3;
+    }
+    button {
+      padding: 10px 20px;
+      margin: 5px;
+      background: #667eea;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 14px;
+    }
+    button:hover {
+      background: #5568d3;
+    }
+    button:disabled {
+      background: #ccc;
+      cursor: not-allowed;
+    }
+    .output {
+      background: #263238;
+      color: #aed581;
+      padding: 15px;
+      border-radius: 4px;
+      font-family: 'Courier New', monospace;
+      font-size: 13px;
+      max-height: 400px;
+      overflow-y: auto;
+      margin-top: 10px;
+    }
+    .log-entry {
+      margin: 5px 0;
+      padding: 3px 0;
+    }
+    .log-info { color: #81c784; }
+    .log-warn { color: #ffb74d; }
+    .log-error { color: #e57373; }
+    .status {
+      padding: 5px 10px;
+      border-radius: 3px;
+      display: inline-block;
+      margin: 5px 0;
+      font-size: 12px;
+    }
+    .status-success { background: #c8e6c9; color: #2e7d32; }
+    .status-error { background: #ffcdd2; color: #c62828; }
+    .status-pending { background: #fff9c4; color: #f57c00; }
+    .data-preview {
+      background: white;
+      padding: 15px;
+      border: 1px solid #e0e0e0;
+      border-radius: 4px;
+      margin-top: 10px;
+      max-height: 300px;
+      overflow-y: auto;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 10px;
+    }
+    th, td {
+      text-align: left;
+      padding: 8px;
+      border-bottom: 1px solid #e0e0e0;
+    }
+    th {
+      background: #f5f5f5;
+      font-weight: bold;
+    }
+    .badge {
+      background: #2196F3;
+      color: white;
+      padding: 2px 8px;
+      border-radius: 10px;
+      font-size: 11px;
+      margin-left: 5px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🔧 ReferenceDataManager Test Suite</h1>
+    <p style="color: #666; margin-bottom: 20px;">
+      This page tests the ReferenceDataManager component functionality including fetch, cache, staleness checking, and refresh.
+    </p>
+
+    <!-- Test Controls -->
+    <div class="section">
+      <h3>Test Controls</h3>
+      <button id="btnInitialize">1. Initialize Manager</button>
+      <button id="btnFetchProducts" disabled>2. Fetch Products</button>
+      <button id="btnGetCached" disabled>3. Get from Cache</button>
+      <button id="btnCheckStale" disabled>4. Check if Stale</button>
+      <button id="btnRefresh" disabled>5. Force Refresh</button>
+      <button id="btnClear" disabled>6. Clear Cache</button>
+      <button id="btnViewAll" disabled>7. View All Cached</button>
+      <button id="btnClearLog">Clear Log</button>
+    </div>
+
+    <!-- Status Display -->
+    <div class="section">
+      <h3>Status</h3>
+      <div id="status">
+        <span class="status status-pending">Not Initialized</span>
+      </div>
+    </div>
+
+    <!-- Data Preview -->
+    <div class="section">
+      <h3>Data Preview</h3>
+      <div id="dataPreview" class="data-preview">
+        <em style="color: #999;">No data loaded yet. Click "Fetch Products" to load data.</em>
+      </div>
+    </div>
+
+    <!-- Console Output -->
+    <div class="section">
+      <h3>Console Output</h3>
+      <div id="output" class="output"></div>
+    </div>
+  </div>
+
+  <!-- Load ReferenceDataManager -->
+  <script src="ReferenceDataManager.js"></script>
+
+  <!-- Test Script -->
+  <script>
+    let manager = null;
+    const MODULE_ID = 'test-reference-data-manager';
+    const DATA_TYPE = 'products';
+
+    // UI Elements
+    const btnInitialize = document.getElementById('btnInitialize');
+    const btnFetchProducts = document.getElementById('btnFetchProducts');
+    const btnGetCached = document.getElementById('btnGetCached');
+    const btnCheckStale = document.getElementById('btnCheckStale');
+    const btnRefresh = document.getElementById('btnRefresh');
+    const btnClear = document.getElementById('btnClear');
+    const btnViewAll = document.getElementById('btnViewAll');
+    const btnClearLog = document.getElementById('btnClearLog');
+    const statusDiv = document.getElementById('status');
+    const outputDiv = document.getElementById('output');
+    const dataPreviewDiv = document.getElementById('dataPreview');
+
+    // Logger
+    function log(message, type = 'info') {
+      const timestamp = new Date().toLocaleTimeString();
+      const logClass = `log-${type}`;
+      const entry = document.createElement('div');
+      entry.className = `log-entry ${logClass}`;
+      entry.textContent = `[${timestamp}] ${message}`;
+      outputDiv.appendChild(entry);
+      outputDiv.scrollTop = outputDiv.scrollHeight;
+
+      // Also log to browser console
+      console.log(message);
+    }
+
+    function setStatus(message, type = 'success') {
+      const statusClass = `status-${type}`;
+      statusDiv.innerHTML = `<span class="status ${statusClass}">${message}</span>`;
+    }
+
+    function enableButtons() {
+      btnFetchProducts.disabled = false;
+      btnGetCached.disabled = false;
+      btnCheckStale.disabled = false;
+      btnRefresh.disabled = false;
+      btnClear.disabled = false;
+      btnViewAll.disabled = false;
+    }
+
+    function showData(data) {
+      if (!data || data.length === 0) {
+        dataPreviewDiv.innerHTML = '<em style="color: #999;">No data available.</em>';
+        return;
+      }
+
+      let html = '<table>';
+      html += '<thead><tr><th>SKU</th><th>Name</th><th>Barcode</th><th>Location</th></tr></thead>';
+      html += '<tbody>';
+
+      data.slice(0, 10).forEach(item => {
+        html += '<tr>';
+        html += `<td><strong>${item.sku}</strong></td>`;
+        html += `<td>${item.name}</td>`;
+        html += `<td><code>${item.barcode}</code></td>`;
+        html += `<td>${item.default_location}</td>`;
+        html += '</tr>';
+      });
+
+      html += '</tbody></table>';
+
+      if (data.length > 10) {
+        html += `<p style="margin-top: 10px; color: #666; font-size: 13px;">
+          Showing 10 of ${data.length} items.
+        </p>`;
+      }
+
+      dataPreviewDiv.innerHTML = html;
+    }
+
+    function showCachedItems(items) {
+      if (!items || items.length === 0) {
+        dataPreviewDiv.innerHTML = '<em style="color: #999;">No cached items found.</em>';
+        return;
+      }
+
+      let html = '<table>';
+      html += '<thead><tr><th>Key</th><th>Count</th><th>Updated</th><th>Expires</th><th>Status</th></tr></thead>';
+      html += '<tbody>';
+
+      items.forEach(item => {
+        const isStale = Date.now() >= item.expires_at;
+        const statusBadge = isStale ?
+          '<span class="badge" style="background: #ff9800;">STALE</span>' :
+          '<span class="badge" style="background: #4caf50;">FRESH</span>';
+
+        html += '<tr>';
+        html += `<td><strong>${item.key}</strong></td>`;
+        html += `<td>${item.count} items</td>`;
+        html += `<td>${new Date(item.updated_at).toLocaleString()}</td>`;
+        html += `<td>${new Date(item.expires_at).toLocaleString()}</td>`;
+        html += `<td>${statusBadge}</td>`;
+        html += '</tr>';
+      });
+
+      html += '</tbody></table>';
+      dataPreviewDiv.innerHTML = html;
+    }
+
+    // Test Functions
+    async function initialize() {
+      try {
+        log('Initializing ReferenceDataManager...', 'info');
+        manager = new ReferenceDataManager(MODULE_ID, {
+          defaultTTL: 60 * 60 * 1000 // 1 hour for testing
+        });
+
+        await manager.initialize();
+        log('✅ Manager initialized successfully', 'info');
+        setStatus('Initialized', 'success');
+        enableButtons();
+      } catch (error) {
+        log(`❌ Initialization failed: ${error.message}`, 'error');
+        setStatus('Initialization Failed', 'error');
+      }
+    }
+
+    async function fetchProducts() {
+      try {
+        log(`Fetching ${DATA_TYPE} from API...`, 'info');
+        const data = await manager.fetch(DATA_TYPE);
+        log(`✅ Fetched ${data.length} products`, 'info');
+        showData(data);
+        setStatus(`Fetched ${data.length} items`, 'success');
+      } catch (error) {
+        log(`❌ Fetch failed: ${error.message}`, 'error');
+        setStatus('Fetch Failed', 'error');
+      }
+    }
+
+    async function getCached() {
+      try {
+        log('Getting products from cache...', 'info');
+        const data = await manager.get(DATA_TYPE);
+        log(`✅ Retrieved ${data.length} products from cache`, 'info');
+        showData(data);
+        setStatus(`Retrieved ${data.length} items from cache`, 'success');
+      } catch (error) {
+        log(`❌ Get failed: ${error.message}`, 'error');
+        setStatus('Get Failed', 'error');
+      }
+    }
+
+    async function checkStale() {
+      try {
+        log('Checking if cache is stale...', 'info');
+        const isStale = await manager.isStale(DATA_TYPE);
+        log(`Cache is ${isStale ? 'STALE' : 'FRESH'}`, isStale ? 'warn' : 'info');
+        setStatus(`Cache is ${isStale ? 'STALE' : 'FRESH'}`, isStale ? 'error' : 'success');
+      } catch (error) {
+        log(`❌ Check failed: ${error.message}`, 'error');
+        setStatus('Check Failed', 'error');
+      }
+    }
+
+    async function refresh() {
+      try {
+        log('Force refreshing data from API...', 'info');
+        const data = await manager.refresh(DATA_TYPE);
+        log(`✅ Refreshed ${data.length} products`, 'info');
+        showData(data);
+        setStatus(`Refreshed ${data.length} items`, 'success');
+      } catch (error) {
+        log(`❌ Refresh failed: ${error.message}`, 'error');
+        setStatus('Refresh Failed', 'error');
+      }
+    }
+
+    async function clearCache() {
+      try {
+        log(`Clearing cache for ${DATA_TYPE}...`, 'info');
+        await manager.clear(DATA_TYPE);
+        log('✅ Cache cleared', 'info');
+        dataPreviewDiv.innerHTML = '<em style="color: #999;">Cache cleared.</em>';
+        setStatus('Cache Cleared', 'success');
+      } catch (error) {
+        log(`❌ Clear failed: ${error.message}`, 'error');
+        setStatus('Clear Failed', 'error');
+      }
+    }
+
+    async function viewAllCached() {
+      try {
+        log('Viewing all cached items...', 'info');
+        const items = await manager.getAllCached();
+        log(`Found ${items.length} cached item(s)`, 'info');
+        showCachedItems(items);
+        setStatus(`${items.length} cached item(s)`, 'success');
+      } catch (error) {
+        log(`❌ View failed: ${error.message}`, 'error');
+        setStatus('View Failed', 'error');
+      }
+    }
+
+    function clearLog() {
+      outputDiv.innerHTML = '';
+      log('Log cleared', 'info');
+    }
+
+    // Event Listeners
+    btnInitialize.addEventListener('click', initialize);
+    btnFetchProducts.addEventListener('click', fetchProducts);
+    btnGetCached.addEventListener('click', getCached);
+    btnCheckStale.addEventListener('click', checkStale);
+    btnRefresh.addEventListener('click', refresh);
+    btnClear.addEventListener('click', clearCache);
+    btnViewAll.addEventListener('click', viewAllCached);
+    btnClearLog.addEventListener('click', clearLog);
+
+    // Initial log
+    log('ReferenceDataManager Test Page loaded', 'info');
+    log('Click "Initialize Manager" to start testing', 'info');
+  </script>
+</body>
+</html>

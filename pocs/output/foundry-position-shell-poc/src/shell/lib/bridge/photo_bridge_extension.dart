@@ -225,11 +225,13 @@ class PhotoBridgeExtension {
 
       final duration = DateTime.now().difference(startTime);
       print('[PhotoBridge] Photo saved and encoded in ${duration.inMilliseconds}ms');
+      print('[PhotoBridge] File path for upload: ${storedPhoto.originalUri}');
 
       return {
         'success': true,
-        'photoPath': photoBase64,  // Base64 data URL for WebView
-        'thumbnailPath': thumbnailBase64,  // Base64 data URL for WebView
+        'filePath': storedPhoto.originalUri,  // Original file:// path for upload
+        'photoPath': photoBase64,  // Base64 data URL for WebView display
+        'thumbnailPath': thumbnailBase64,  // Base64 data URL for WebView display
         'timestamp': storedPhoto.createdAt.millisecondsSinceEpoch,
         'width': 1920, // Max width after compression
         'height': 1080, // Max height after compression
@@ -364,6 +366,53 @@ class PhotoBridgeExtension {
     }
 
     return true;
+  }
+
+  /// Read a file from Flutter storage and return as base64
+  /// Used by SyncManager to upload photos to backend
+  /// Returns: {success: bool, fileName: string, fileData: string (base64), size: number, error: string?}
+  Future<Map<String, dynamic>?> readFileAsBase64(String filePath) async {
+    try {
+      print('[PhotoBridge] Reading file as base64: $filePath');
+
+      // Remove file:// prefix if present
+      final cleanPath = filePath.replaceFirst('file://', '');
+      final file = File(cleanPath);
+
+      // Check if file exists
+      if (!await file.exists()) {
+        print('[PhotoBridge] File not found: $cleanPath');
+        return {
+          'success': false,
+          'error': 'File not found'
+        };
+      }
+
+      // Read file bytes
+      final bytes = await file.readAsBytes();
+
+      // Encode to base64
+      final base64Data = base64Encode(bytes);
+
+      // Get file name
+      final fileName = file.uri.pathSegments.last;
+
+      print('[PhotoBridge] ✅ File read: $fileName (${bytes.length} bytes)');
+
+      return {
+        'success': true,
+        'fileName': fileName,
+        'fileData': base64Data,
+        'size': bytes.length,
+      };
+
+    } catch (e) {
+      print('[PhotoBridge] Error reading file: $e');
+      return {
+        'success': false,
+        'error': 'Failed to read file: ${e.toString()}'
+      };
+    }
   }
 
 }

@@ -46,6 +46,10 @@ dependencies:
   camera: ^0.10.0           # Still photo capture
   image: ^4.0.0             # Image processing and compression
 
+  # Phase 1: Local HTTP Server
+  shelf: ^1.4.1             # HTTP server framework
+  shelf_static: ^1.1.2      # Static file serving
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
@@ -59,4 +63,13 @@ dev_dependencies:
 flutter:
   uses-material-design: true
   assets:
-    - assets/modules/sample-warehouse/
+    - assets/modules/test-inventory-checker/dist/index.html
+    - assets/modules/test-inventory-checker/dist/bundle.js
+    - assets/modules/test-inventory-checker/dist/bundle.js.map
+    - assets/modules/test-quality-inspector/dist/index.html
+    - assets/modules/test-quality-inspector/dist/bundle.js
+    - assets/modules/test-quality-inspector/dist/bundle.js.map
+    - assets/modules/shared/bridge_helper.js
+    - assets/modules/shared/ActionQueueGlobal.js
+    - assets/modules/shared/ReferenceDataManager.js
+    - assets/modules/shared/SyncManager.js
